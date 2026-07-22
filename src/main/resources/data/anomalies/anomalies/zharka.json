@@ -1,0 +1,40 @@
+{
+  "particles": [
+    {
+      "type": "minecraft:flame",
+      "shape": "CYLINDER",
+      "interval": 2,
+      "radius": 0.8,
+      "height": 2.0,
+      "count": 4
+    },
+    {
+      "type": "minecraft:large_smoke",
+      "shape": "CYLINDER",
+      "interval": 5,
+      "radius": 0.6,
+      "height": 1.8,
+      "count": 2
+    }
+  ],
+  "sound": {
+    "event": "minecraft:entity.firework_rocket.blast",
+    "interval": 40,
+    "source": "BLOCKS",
+    "volume": 1.0,
+    "pitch": 1.0
+  },
+  "trigger": {
+    "expandRadius": 0.3,
+    "interval": 10
+  },
+  "behavior": {
+    "damage": 4.0,
+    "fireSeconds": 6,
+    "impulseX": 0.0,
+    "impulseY": 0.0,
+    "impulseZ": 0.0,
+    "pullToCenter": false,
+    "ignoreOtherAnomalies": true
+  }
+}

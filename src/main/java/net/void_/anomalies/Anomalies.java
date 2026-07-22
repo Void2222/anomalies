@@ -31,6 +31,10 @@ public class Anomalies {
 
     }
 
+    @SubscribeEvent
+    public void onAddReloadListeners(net.minecraftforge.event.AddReloadListenerEvent event) {
+        event.addListener(new net.void_.anomalies.anomaly.AnomalyReloadListener());
+    }
 
     private void commonSetup(final FMLCommonSetupEvent event) {
         // Код общей инициализации мода (выполняется при запуске игры)

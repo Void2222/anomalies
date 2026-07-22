@@ -1,0 +1,32 @@
+{
+  "particles": [
+    {
+      "type": "minecraft:campfire_cosy_smoke",
+      "shape": "DISC",
+      "interval": 3,
+      "radius": 1.2,
+      "height": 0.2,
+      "count": 3
+    }
+  ],
+  "sound": {
+    "event": "minecraft:entity.ender_eye.launch",
+    "interval": 60,
+    "source": "BLOCKS",
+    "volume": 1.0,
+    "pitch": 1.0
+  },
+  "trigger": {
+    "expandRadius": 0.5,
+    "interval": 5
+  },
+  "behavior": {
+    "damage": 6.0,
+    "fireSeconds": 0,
+    "impulseX": 0.0,
+    "impulseY": 1.2,
+    "impulseZ": 0.0,
+    "pullToCenter": false,
+    "ignoreOtherAnomalies": false
+  }
+}
