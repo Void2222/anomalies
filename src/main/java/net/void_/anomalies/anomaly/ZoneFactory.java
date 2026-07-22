@@ -4,88 +4,74 @@ import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.level.Level;
-import net.void_.anomalies.component.DamageComponent;
-import net.void_.anomalies.component.ImpulseComponent;
-import net.void_.anomalies.component.ParticleComponent;
-import net.void_.anomalies.component.SoundComponent;
-import net.void_.anomalies.component.TriggerComponent;
 import net.void_.anomalies.core.AnomalyEntity;
+
+// Импорты компонентов:
+import net.void_.anomalies.components.DamageComponent;
+import net.void_.anomalies.components.ImpulseComponent;
+import net.void_.anomalies.components.ParticleComponent;
+import net.void_.anomalies.components.SnapToGridComponent; // Импорт нового компонента
+import net.void_.anomalies.components.SoundComponent;
+import net.void_.anomalies.components.TriggerComponent;
 import net.void_.anomalies.setup.EntityInit;
 
 public class ZoneFactory {
 
-    /**
-     * Создает аномалию «Жарка»:
-     * - Спавнит пламя
-     * - Гудит огнем
-     * - Поджигает и наносит урон при попадании в зону
-     */
-    public static AnomalyEntity createZharka(Level level, double x, double y, double z) {
-        AnomalyEntity anomaly = new AnomalyEntity(EntityInit.ANOMALY.get(), level);
-        anomaly.setPos(x, y, z);
+    public static void applyComponents(AnomalyEntity anomaly, String type) {
+        // Каждое создание аномалии теперь автоматически выравнивает её по сетке блоков
+        anomaly.addComponent(new SnapToGridComponent());
 
-        // Столб огня: радиус 0.8 блоков, высота 2.0 блока, спавн каждые 2 тика
-        anomaly.addComponent(new ParticleComponent(
-                ParticleTypes.FLAME,
-                2,
-                ParticleComponent.Shape.CYLINDER,
-                0.8D, // радиус
-                2.0D, // высота столба
-                4     // количество частиц
-        ));
+        switch (type.toLowerCase()) {
+            case "zharka" -> setupZharka(anomaly);
+            case "tramplin" -> setupTramplin(anomaly);
+        }
+    }
 
-        // Добавляем дымок внутрь столба для густоты
-        anomaly.addComponent(new ParticleComponent(
-                ParticleTypes.LARGE_SMOKE,
-                5,
-                ParticleComponent.Shape.CYLINDER,
-                0.1D,
-                2D,
-                15
-        ));
+    private static void setupZharka(AnomalyEntity anomaly) {
+        anomaly.addComponent(new ParticleComponent(ParticleTypes.FLAME, 2, ParticleComponent.Shape.CYLINDER, 0.8D, 2.0D, 4));
+        anomaly.addComponent(new ParticleComponent(ParticleTypes.LARGE_SMOKE, 5, ParticleComponent.Shape.CYLINDER, 0.6D, 1.8D, 2));
+        anomaly.addComponent(new SoundComponent(SoundEvents.FIRE_AMBIENT, 1200, SoundSource.BLOCKS));
 
-        anomaly.addComponent(new SoundComponent(SoundEvents.FIRE_AMBIENT, 40, SoundSource.BLOCKS));
+        DamageComponent damageComp = new DamageComponent(4.0F, anomaly.level().damageSources().inFire());
 
-        DamageComponent damageComp = new DamageComponent(4.0F, level.damageSources().inFire());
-        anomaly.addComponent(new TriggerComponent(0.3D, (anom, target) -> {
+        anomaly.addComponent(new TriggerComponent(0.3D, 10, (anom, target) -> {
+            // Игнорируем другие аномалии, чтобы они не поджигали друг друга!
+            if (target instanceof AnomalyEntity) return;
+
             target.setSecondsOnFire(6);
             damageComp.inflictDamage(target);
         }));
-
-        anomaly.setAnomalyType("zharka");
-        return anomaly;
     }
 
-    /**
-     * Создает аномалию «Трамплин»:
-     * - Эффект воздуха/взрыва
-     * - Резко подбрасывает вверх и наносит урон от падения/разрыва
-     */
-    public static AnomalyEntity createTramplin(Level level, double x, double y, double z) {
-        AnomalyEntity anomaly = new AnomalyEntity(EntityInit.ANOMALY.get(), level);
-        anomaly.setPos(x, y, z);
+    private static void setupTramplin(AnomalyEntity anomaly) {
+        anomaly.addComponent(new ParticleComponent(ParticleTypes.CAMPFIRE_COSY_SMOKE, 3, ParticleComponent.Shape.DISC, 1.2D, 0.2D, 3));
+        anomaly.addComponent(new SoundComponent(SoundEvents.AMETHYST_BLOCK_BREAK, 1200, SoundSource.BLOCKS));
 
-        // Лужа дыма на земле: радиус 1.2 блока, высота 0.2, густой дым
-        anomaly.addComponent(new ParticleComponent(
-                ParticleTypes.CAMPFIRE_COSY_SMOKE,
-                3,
-                ParticleComponent.Shape.DISC,
-                0.4D, // радиус лужи
-                0.2D, // почти плоская
-                5     // количество
-        ));
+        ImpulseComponent impulseComp = new ImpulseComponent(0.0D, 1.2D, 0.0D, false);
+        DamageComponent damageComp = new DamageComponent(6.0F, anomaly.level().damageSources().generic());
 
-        anomaly.addComponent(new SoundComponent(SoundEvents.ENDER_EYE_LAUNCH, 60, SoundSource.BLOCKS));
-
-        ImpulseComponent impulseComp = new ImpulseComponent(0.0D, 1.0D, 0.0D, false);
-        DamageComponent damageComp = new DamageComponent(6.0F, level.damageSources().generic());
-
-        anomaly.addComponent(new TriggerComponent(0.5D, (anom, target) -> {
+        anomaly.addComponent(new TriggerComponent(0.5D, 5, (anom, target) -> {
+            // Трамплин может подбрасывать и другие аномалии или мобов, но если хочешь исключить — тоже можно добавить `if (target instanceof AnomalyEntity) return;`
             impulseComp.applyImpulse(anom, target);
             damageComp.inflictDamage(target);
         }));
+    }
 
-        anomaly.setAnomalyType("tramplin");
+    public static AnomalyEntity createZharka(Level level, double x, double y, double z) {
+        AnomalyEntity anomaly = EntityInit.ANOMALY.get().create(level);
+        if (anomaly != null) {
+            anomaly.setPos(x, y, z);
+            anomaly.setAnomalyType("zharka");
+        }
+        return anomaly;
+    }
+
+    public static AnomalyEntity createTramplin(Level level, double x, double y, double z) {
+        AnomalyEntity anomaly = EntityInit.ANOMALY.get().create(level);
+        if (anomaly != null) {
+            anomaly.setPos(x, y, z);
+            anomaly.setAnomalyType("tramplin");
+        }
         return anomaly;
     }
 }

@@ -1,16 +1,15 @@
-package net.void_.anomalies.component;
+package net.void_.anomalies.components;
 
 import net.minecraft.core.particles.ParticleOptions;
-import net.minecraft.server.level.ServerLevel;
 import net.void_.anomalies.core.AnomalyEntity;
 import net.void_.anomalies.core.IAnomalyComponent;
 
 public class ParticleComponent implements IAnomalyComponent {
 
     public enum Shape {
-        SPHERE, // Сфера (вокруг центра)
+        SPHERE,   // Сфера (вокруг центра)
         CYLINDER, // Столб (высокий цилиндр, идеально для Жарки)
-        DISC     // Диск/лужа на земле (плоский круг, идеально для Трамплина)
+        DISC      // Диск/лужа на земле (плоский круг, идеально для Трамплина)
     }
 
     private final ParticleOptions particleType;
@@ -20,15 +19,15 @@ public class ParticleComponent implements IAnomalyComponent {
     private final double height;     // Высота зоны (для цилиндра/столба)
     private final int count;         // Сколько частиц за раз
 
-    private int serverTickCounter = 0;
+    private int clientTickCounter = 0;
 
     /**
-     * @param particleType Тип частицы
+     * @param particleType  Тип частицы
      * @param spawnInterval Как часто спавнить (в тиках)
-     * @param shape Форма (SPHERE, CYLINDER, DISC)
-     * @param radius Радиус зоны
-     * @param height Высота зоны
-     * @param count Количество частиц за один спавн
+     * @param shape         Форма (SPHERE, CYLINDER, DISC)
+     * @param radius        Радиус зоны
+     * @param height        Высота зоны
+     * @param count         Количество частиц за один спавн
      */
     public ParticleComponent(ParticleOptions particleType, int spawnInterval, Shape shape, double radius, double height, int count) {
         this.particleType = particleType;
@@ -41,12 +40,16 @@ public class ParticleComponent implements IAnomalyComponent {
 
     @Override
     public void serverTick(AnomalyEntity anomaly) {
-        var level = anomaly.level();
-        if (level.isClientSide) return;
+        // На сервере ничего не делаем — партиклы полностью клиентские!
+    }
 
-        serverTickCounter++;
-        if (serverTickCounter >= spawnInterval) {
-            serverTickCounter = 0;
+    @Override
+    public void clientTick(AnomalyEntity anomaly) {
+        var level = anomaly.level();
+
+        clientTickCounter++;
+        if (clientTickCounter >= spawnInterval) {
+            clientTickCounter = 0;
 
             var pos = anomaly.position();
             var random = level.random;
@@ -90,12 +93,11 @@ public class ParticleComponent implements IAnomalyComponent {
                     }
                 }
 
-                ((ServerLevel) level).sendParticles(
+                // Спавним частицу напрямую на клиенте с векторной скоростью
+                level.addParticle(
                         particleType,
                         x, y, z,
-                        1, // по 1 частице за итерацию цикла
-                        dx, dy, dz,
-                        0.02D // скорость разлета
+                        dx, dy, dz
                 );
             }
         }

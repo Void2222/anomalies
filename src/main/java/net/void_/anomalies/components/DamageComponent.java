@@ -1,4 +1,4 @@
-package net.void_.anomalies.component;
+package net.void_.anomalies.components;
 
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.Entity;
