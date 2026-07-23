@@ -8,13 +8,17 @@ import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.server.packs.resources.SimpleJsonResourceReloadListener;
 import net.minecraft.util.profiling.ProfilerFiller;
 import net.void_.anomalies.anomaly.data.AnomalyDefinition;
+import net.void_.anomalies.anomaly.data.MinMaxRange;
 
 import java.util.HashMap;
 import java.util.Map;
 
 public class AnomalyReloadListener extends SimpleJsonResourceReloadListener {
 
-    private static final Gson GSON = new GsonBuilder().setLenient().create();
+    private static final Gson GSON = new GsonBuilder()
+            .setLenient()
+            .registerTypeAdapter(MinMaxRange.class, new MinMaxRange.Deserializer())
+            .create();
 
     // Хранилище всех загруженных аномалий по их ID
     private static final Map<String, AnomalyDefinition> REGISTRY = new HashMap<>();

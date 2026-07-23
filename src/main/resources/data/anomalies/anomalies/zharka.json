@@ -19,7 +19,7 @@
   ],
   "sound": {
     "event": "minecraft:entity.firework_rocket.blast",
-    "interval": 40,
+    "interval": [50, 125],
     "source": "BLOCKS",
     "volume": 1.0,
     "pitch": 1.0

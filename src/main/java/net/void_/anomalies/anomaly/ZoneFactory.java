@@ -32,7 +32,9 @@ public class ZoneFactory {
             var t = definition.trigger();
 
             // Создаем компоненты эффектов, если они нужны
-            DamageComponent damageComp = b.damage() > 0 ? new DamageComponent(b.damage(), anomaly.level().damageSources().inFire()) : null;
+            DamageComponent damageComp = !b.damage().isZero()
+                    ? new DamageComponent(b.damage(), anomaly.level().damageSources().inFire())
+                    : null;
             ImpulseComponent impulseComp = (b.impulseX() != 0 || b.impulseY() != 0 || b.impulseZ() != 0)
                     ? new ImpulseComponent(b.impulseX(), b.impulseY(), b.impulseZ(), b.pullToCenter())
                     : null;

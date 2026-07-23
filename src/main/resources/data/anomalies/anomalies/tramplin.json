@@ -11,7 +11,7 @@
   ],
   "sound": {
     "event": "minecraft:entity.ender_eye.launch",
-    "interval": 60,
+    "interval": [35, 75],
     "source": "BLOCKS",
     "volume": 1.0,
     "pitch": 1.0

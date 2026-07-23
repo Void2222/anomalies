@@ -8,7 +8,7 @@ import net.void_.anomalies.components.SoundComponent;
 
 public record SoundConfig(
         String event,
-        int interval,
+        MinMaxRange interval, // Теперь диапазон
         String source,
         float volume,
         float pitch

@@ -1,8 +1,8 @@
 package net.void_.anomalies.anomaly.data;
 
-import com.google.gson.JsonObject;
 import net.minecraft.core.particles.ParticleOptions;
 import net.minecraft.core.particles.ParticleType;
+import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.void_.anomalies.components.ParticleComponent;
@@ -10,16 +10,14 @@ import net.void_.anomalies.components.ParticleComponent;
 public record ParticleConfig(
         String type,
         String shape,
-        int interval,
+        MinMaxRange interval, // Теперь диапазон
         double radius,
         double height,
-        int count
+        MinMaxRange count     // Теперь диапазон
 ) {
     public ParticleComponent toComponent() {
-        // Парсим тип частицы из строкового ID (например, "minecraft:flame")
         ParticleType<?> particleType = BuiltInRegistries.PARTICLE_TYPE.get(ResourceLocation.parse(type));
-        // На случай, если в JSON передали что-то не то, подстрахуемся дефолтной частицей
-        ParticleOptions options = (particleType instanceof ParticleOptions opt) ? opt : net.minecraft.core.particles.ParticleTypes.FLAME;
+        ParticleOptions options = (particleType instanceof ParticleOptions opt) ? opt : ParticleTypes.FLAME;
 
         ParticleComponent.Shape parsedShape;
         try {
