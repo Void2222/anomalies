@@ -1,7 +1,7 @@
 {
   "size": {
-    "width": 1.0,
-    "height": 2.5
+    "width": 1.6,
+    "height": 0.4
   },
   "particles": [
     {
@@ -25,7 +25,7 @@
     "interval": 5
   },
   "behavior": {
-    "damage": 6.0,
+    "damage": 0,
     "fireSeconds": 0,
     "impulseX": 0.0,
     "impulseY": 1.2,

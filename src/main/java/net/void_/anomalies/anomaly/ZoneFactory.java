@@ -45,15 +45,18 @@ public class ZoneFactory {
                     : null;
 
             anomaly.addComponent(new TriggerComponent(t.expandRadius(), t.interval(), (anom, target) -> {
-                // Игнорируем другие аномалии, если в JSON включен флаг
+
                 if (b.ignoreOtherAnomalies() && target instanceof AnomalyEntity) return;
 
-                if (b.fireSeconds() > 0) {
+                boolean isItem = target instanceof net.minecraft.world.entity.item.ItemEntity;
+
+                if (!isItem && b.fireSeconds() > 0) {
                     target.setSecondsOnFire(b.fireSeconds());
                 }
-                if (damageComp != null) {
+                if (!isItem && damageComp != null) {
                     damageComp.inflictDamage(target);
                 }
+
                 if (impulseComp != null) {
                     impulseComp.applyImpulse(anom, target);
                 }
