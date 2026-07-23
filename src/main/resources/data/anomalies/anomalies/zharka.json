@@ -1,4 +1,8 @@
 {
+  "size": {
+    "width": 2.0,
+    "height": 0.5
+  },
   "particles": [
     {
       "type": "minecraft:flame",

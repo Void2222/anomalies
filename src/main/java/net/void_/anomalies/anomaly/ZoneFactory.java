@@ -17,6 +17,10 @@ public class ZoneFactory {
         AnomalyDefinition definition = AnomalyReloadListener.get(type);
         if (definition == null) return;
 
+        if (definition.size() != null) {
+            anomaly.setAnomalyDimensions(definition.size().width(), definition.size().height());
+        }
+
         // 1. Добавляем партиклы
         if (definition.particles() != null) {
             definition.particles().forEach(pConfig -> anomaly.addComponent(pConfig.toComponent()));
