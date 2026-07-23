@@ -2,6 +2,7 @@ package net.void_.anomalies.anomaly;
 
 import net.minecraft.world.level.Level;
 import net.void_.anomalies.anomaly.data.AnomalyDefinition;
+import net.void_.anomalies.anomaly.loader.AnomalyReloadListener;
 import net.void_.anomalies.components.*;
 import net.void_.anomalies.core.AnomalyEntity;
 import net.void_.anomalies.setup.EntityInit;

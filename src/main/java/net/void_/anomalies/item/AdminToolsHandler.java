@@ -1,4 +1,4 @@
-package net.void_.anomalies.setup;
+package net.void_.anomalies.item;
 
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;

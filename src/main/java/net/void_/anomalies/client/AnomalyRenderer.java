@@ -1,4 +1,4 @@
-package net.void_.anomalies.setup;
+package net.void_.anomalies.client;
 
 import net.minecraft.client.renderer.entity.EntityRenderer;
 import net.minecraft.client.renderer.entity.EntityRendererProvider;

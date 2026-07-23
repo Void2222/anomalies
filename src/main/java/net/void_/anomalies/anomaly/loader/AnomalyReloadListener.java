@@ -1,4 +1,4 @@
-package net.void_.anomalies.anomaly;
+package net.void_.anomalies.anomaly.loader;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;

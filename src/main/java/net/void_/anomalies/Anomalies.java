@@ -9,6 +9,7 @@ import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 
+import net.void_.anomalies.anomaly.loader.AnomalyReloadListener;
 import net.void_.anomalies.setup.AnomalyCommands;
 import net.void_.anomalies.setup.EntityInit;
 import org.slf4j.Logger;
@@ -33,7 +34,7 @@ public class Anomalies {
 
     @SubscribeEvent
     public void onAddReloadListeners(net.minecraftforge.event.AddReloadListenerEvent event) {
-        event.addListener(new net.void_.anomalies.anomaly.AnomalyReloadListener());
+        event.addListener(new AnomalyReloadListener());
     }
 
     private void commonSetup(final FMLCommonSetupEvent event) {

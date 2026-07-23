@@ -1,4 +1,4 @@
-package net.void_.anomalies.setup;
+package net.void_.anomalies.item;
 
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
