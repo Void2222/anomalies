@@ -10,10 +10,8 @@ import net.void_.anomalies.setup.EntityInit;
 public class ZoneFactory {
 
     public static void applyComponents(AnomalyEntity anomaly, String type) {
-        // Каждая аномалия всегда выравнивается по сетке
         anomaly.addComponent(new SnapToGridComponent());
 
-        // Получаем определение из нашего JSON-реестра
         AnomalyDefinition definition = AnomalyReloadListener.get(type);
         if (definition == null) return;
 
@@ -21,22 +19,18 @@ public class ZoneFactory {
             anomaly.setAnomalyDimensions(definition.size().width(), definition.size().height());
         }
 
-        // 1. Добавляем партиклы
         if (definition.particles() != null) {
             definition.particles().forEach(pConfig -> anomaly.addComponent(pConfig.toComponent()));
         }
 
-        // 2. Добавляем звук
         if (definition.sound() != null) {
             anomaly.addComponent(definition.sound().toComponent());
         }
 
-        // 3. Добавляем триггер и поведение (урон, импульс, поджог)
         if (definition.trigger() != null && definition.behavior() != null) {
             var b = definition.behavior();
             var t = definition.trigger();
 
-            // Создаем компоненты эффектов, если они нужны
             DamageComponent damageComp = !b.damage().isZero()
                     ? new DamageComponent(b.damage(), anomaly.level().damageSources().inFire())
                     : null;
@@ -45,7 +39,6 @@ public class ZoneFactory {
                     : null;
 
             anomaly.addComponent(new TriggerComponent(t.expandRadius(), t.interval(), (anom, target) -> {
-
                 if (b.ignoreOtherAnomalies() && target instanceof AnomalyEntity) return;
 
                 boolean isItem = target instanceof net.minecraft.world.entity.item.ItemEntity;
@@ -56,7 +49,6 @@ public class ZoneFactory {
                 if (!isItem && damageComp != null) {
                     damageComp.inflictDamage(target);
                 }
-
                 if (impulseComp != null) {
                     impulseComp.applyImpulse(anom, target);
                 }
@@ -64,20 +56,14 @@ public class ZoneFactory {
         }
     }
 
-    public static AnomalyEntity createZharka(Level level, double x, double y, double z) {
-        AnomalyEntity anomaly = EntityInit.ANOMALY.get().create(level);
-        if (anomaly != null) {
-            anomaly.setPos(x, y, z);
-            anomaly.setAnomalyType("zharka");
-        }
-        return anomaly;
-    }
+    // 🌟 Универсальный метод создания аномалий любого типа
+    public static AnomalyEntity create(Level level, double x, double y, double z, String type) {
+        if (!AnomalyReloadListener.exists(type)) return null;
 
-    public static AnomalyEntity createTramplin(Level level, double x, double y, double z) {
         AnomalyEntity anomaly = EntityInit.ANOMALY.get().create(level);
         if (anomaly != null) {
             anomaly.setPos(x, y, z);
-            anomaly.setAnomalyType("tramplin");
+            anomaly.setAnomalyType(type.toLowerCase());
         }
         return anomaly;
     }

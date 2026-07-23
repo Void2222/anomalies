@@ -28,6 +28,9 @@ public class AnomalyRelocatorHandler {
 
     @SubscribeEvent
     public static void onEntityInteract(PlayerInteractEvent.EntityInteract event) {
+
+        if (event.getHand() != net.minecraft.world.InteractionHand.MAIN_HAND) return;
+
         Player player = event.getEntity();
         ItemStack mainHand = player.getMainHandItem();
 

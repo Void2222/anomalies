@@ -16,7 +16,6 @@ public interface IAnomalyComponent {
      */
     default void clientTick(AnomalyEntity anomaly) {}
 
-    // Новые методы для NBT
     default void save(CompoundTag tag) {}
     default void load(CompoundTag tag) {}
 

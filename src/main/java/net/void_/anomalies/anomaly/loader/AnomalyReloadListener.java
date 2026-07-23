@@ -33,10 +33,9 @@ public class AnomalyReloadListener extends SimpleJsonResourceReloadListener {
 
         objectMap.forEach((location, json) -> {
             try {
-                // GSON прекрасно принимает JsonElement для десериализации
                 AnomalyDefinition definition = GSON.fromJson(json, AnomalyDefinition.class);
-                REGISTRY.put(location.toString(), definition);
-                REGISTRY.put(location.getPath(), definition); // Чтобы можно было искать просто по имени, например "zharka"
+                // Регистрируем ТОЛЬКО чистый path (например, "zharka" вместо "anomalies:zharka")
+                REGISTRY.put(location.getPath().toLowerCase(), definition);
             } catch (Exception e) {
                 org.slf4j.LoggerFactory.getLogger("Anomalies").error("Failed to parse anomaly json for {}", location, e);
             }
@@ -46,5 +45,13 @@ public class AnomalyReloadListener extends SimpleJsonResourceReloadListener {
     public static AnomalyDefinition get(String type) {
         if (type == null) return null;
         return REGISTRY.get(type.toLowerCase());
+    }
+
+    public static java.util.Set<String> getKeys() {
+        return REGISTRY.keySet();
+    }
+
+    public static boolean exists(String type) {
+        return type != null && REGISTRY.containsKey(type.toLowerCase());
     }
 }

@@ -7,6 +7,7 @@ import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.void_.anomalies.anomaly.ZoneFactory;
+import net.void_.anomalies.anomaly.loader.AnomalyReloadListener;
 import net.void_.anomalies.core.AnomalyEntity;
 
 public class AnomalyCommands {
@@ -14,12 +15,11 @@ public class AnomalyCommands {
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         dispatcher.register(
                 Commands.literal("anomaly")
-                        .requires(source -> source.hasPermission(2)) // Только для операторов / с правами
-                        .then(Commands.argument("type", StringArgumentType.word())
+                        .requires(source -> source.hasPermission(2))
+                        .then(Commands.argument("type", StringArgumentType.string())
                                 .suggests((context, builder) -> {
-                                    // Подсказки в чате при вводе
-                                    builder.suggest("zharka");
-                                    builder.suggest("tramplin");
+                                    // 🌟 Автоматические подсказки в чате из загруженных JSON!
+                                    AnomalyReloadListener.getKeys().forEach(builder::suggest);
                                     return builder.buildFuture();
                                 })
                                 .executes(context -> {
@@ -28,24 +28,21 @@ public class AnomalyCommands {
                                     var player = source.getPlayerOrException();
 
                                     String type = StringArgumentType.getString(context, "type");
-                                    AnomalyEntity anomaly = null;
 
-                                    // Спавним на позиции игрока
-                                    double x = player.getX();
-                                    double y = player.getY();
-                                    double z = player.getZ();
-
-                                    if (type.equalsIgnoreCase("zharka")) {
-                                        anomaly = ZoneFactory.createZharka(level, x, y, z);
-                                    } else if (type.equalsIgnoreCase("tramplin")) {
-                                        anomaly = ZoneFactory.createTramplin(level, x, y, z);
-                                    }
+                                    // 🌟 Создаем аномалию универсально
+                                    AnomalyEntity anomaly = ZoneFactory.create(
+                                            level,
+                                            player.getX(),
+                                            player.getY(),
+                                            player.getZ(),
+                                            type
+                                    );
 
                                     if (anomaly != null) {
                                         level.addFreshEntity(anomaly);
                                         source.sendSuccess(() -> Component.literal("§aАномалия " + type + " успешно создана!"), true);
                                     } else {
-                                        source.sendFailure(Component.literal("§cНеизвестный тип аномалии!"));
+                                        source.sendFailure(Component.literal("§cАномалия типа '" + type + "' не найдена в JSON!"));
                                     }
 
                                     return 1;
