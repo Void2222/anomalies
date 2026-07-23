@@ -1,6 +1,8 @@
 package net.void_.anomalies.components;
 
+import net.minecraft.client.Minecraft;
 import net.minecraft.core.particles.ParticleOptions;
+import net.minecraft.world.entity.player.Player;
 import net.void_.anomalies.anomaly.data.MinMaxRange;
 import net.void_.anomalies.core.AnomalyEntity;
 import net.void_.anomalies.core.IAnomalyComponent;
@@ -19,6 +21,9 @@ public class ParticleComponent implements IAnomalyComponent {
     private int clientTickCounter = 0;
     private int nextTriggerTick;
 
+    // 🌟 Радиус отрисовки партиклов (в блоках). Если игрок дальше — аномалия "спит" на клиенте
+    private static final double RENDER_DISTANCE = 69.0D;
+
     public ParticleComponent(ParticleOptions particleType, MinMaxRange intervalRange, Shape shape, double radius, double height, MinMaxRange countRange) {
         this.particleType = particleType;
         this.intervalRange = intervalRange;
@@ -35,6 +40,15 @@ public class ParticleComponent implements IAnomalyComponent {
     @Override
     public void clientTick(AnomalyEntity anomaly) {
         var level = anomaly.level();
+
+        // 🛑 LOD-ОПТИМИЗАЦИЯ КЛИЕНТА: Проверяем дистанцию до локального игрока
+        Player localPlayer = Minecraft.getInstance().player;
+        if (localPlayer != null) {
+            double distanceSq = anomaly.distanceToSqr(localPlayer);
+            if (distanceSq > RENDER_DISTANCE * RENDER_DISTANCE) {
+                return; // Игрок далеко — не тратим ресурсы на спавн партиклов
+            }
+        }
 
         clientTickCounter++;
         if (clientTickCounter >= nextTriggerTick) {

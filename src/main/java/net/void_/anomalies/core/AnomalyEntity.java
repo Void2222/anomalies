@@ -59,6 +59,8 @@ public class AnomalyEntity extends Entity {
         this.refreshDimensions(); // Встроенный метод Minecraft, обновляющий хитбокс в мире
     }
 
+
+
     // Вызывается автоматически на клиенте, когда сервер присылает обновленный ANOMALY_TYPE
     @Override
     public void onSyncedDataUpdated(EntityDataAccessor<?> key) {
