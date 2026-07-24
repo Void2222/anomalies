@@ -1,0 +1,36 @@
+{
+  "size": {
+    "width": 0.5,
+    "height": 0.5
+  },
+  "particles": [
+    {
+      "type": "minecraft:electric_spark",
+      "shape": "CYLINDER",
+      "interval": 2,
+      "radius": 1.2,
+      "height": 1.2,
+      "count": 15
+    }
+  ],
+  "sound": {
+    "event": "minecraft:entity.lightning_bolt.thunder",
+    "interval": [40, 100],
+    "source": "BLOCKS",
+    "volume": 0.8,
+    "pitch": 1.6
+  },
+  "trigger": {
+    "expandRadius": 0.8,
+    "interval": 5
+  },
+  "behavior": {
+    "damage": 1.0,
+    "fireSeconds": 0,
+    "impulseX": 0.0,
+    "impulseY": 0.0,
+    "impulseZ": 0.0,
+    "pullToCenter": false,
+    "ignoreOtherAnomalies": true
+  }
+}

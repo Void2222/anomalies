@@ -1,0 +1,36 @@
+{
+  "size": {
+    "width": 1.2,
+    "height": 1.2
+  },
+  "particles": [
+    {
+      "type": "minecraft:portal",
+      "shape": "CYLINDER",
+      "interval": 1,
+      "radius": 1.35,
+      "height": 1.35,
+      "count": 6
+    }
+  ],
+  "sound": {
+    "event": "minecraft:entity.phantom.swoop",
+    "interval": [20, 60],
+    "source": "BLOCKS",
+    "volume": 0.8,
+    "pitch": 0.6
+  },
+  "trigger": {
+    "expandRadius": 1.5,
+    "interval": 2
+  },
+  "behavior": {
+    "damage": 4.0,
+    "fireSeconds": 0,
+    "impulseX": 0.13,
+    "impulseY": -0.11,
+    "impulseZ": 0.13,
+    "pullToCenter": true,
+    "ignoreOtherAnomalies": true
+  }
+}
