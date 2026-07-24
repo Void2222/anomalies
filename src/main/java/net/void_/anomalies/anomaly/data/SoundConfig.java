@@ -8,15 +8,21 @@ import net.void_.anomalies.components.SoundComponent;
 
 public record SoundConfig(
         String event,
-        MinMaxRange interval, // Теперь диапазон
+        MinMaxRange interval,
         String source,
         float volume,
         float pitch
 ) {
     public SoundComponent toComponent() {
-        SoundEvent soundEvent = BuiltInRegistries.SOUND_EVENT.get(ResourceLocation.parse(event));
+        ResourceLocation loc = ResourceLocation.parse(event);
+
+        // 🌟 Ищем в реестре (для ванилы и зарегистрированных звуков)
+        SoundEvent soundEvent = BuiltInRegistries.SOUND_EVENT.get(loc);
+
+        // Если звук не найден в реестре (значит, это кастомный звук твоего мода),
+        // создаем его динамически!
         if (soundEvent == null) {
-            soundEvent = net.minecraft.sounds.SoundEvents.FIRE_AMBIENT;
+            soundEvent = SoundEvent.createVariableRangeEvent(loc);
         }
 
         SoundSource soundSource;

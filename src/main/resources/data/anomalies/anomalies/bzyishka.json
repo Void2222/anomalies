@@ -17,8 +17,8 @@
     "event": "minecraft:entity.lightning_bolt.thunder",
     "interval": [40, 100],
     "source": "BLOCKS",
-    "volume": 0.8,
-    "pitch": 1.6
+    "volume": 0.1,
+    "pitch": 0.6
   },
   "trigger": {
     "expandRadius": 0.8,

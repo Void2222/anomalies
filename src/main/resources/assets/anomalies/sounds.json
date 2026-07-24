@@ -1,0 +1,8 @@
+{
+  "voronok_ambient": {
+    "sounds": [
+      "anomalies:voronok_ambient"
+    ],
+    "subtitle": "anomalies.subtitles.voronok"
+  }
+}

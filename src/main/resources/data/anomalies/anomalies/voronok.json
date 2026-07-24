@@ -14,11 +14,11 @@
     }
   ],
   "sound": {
-    "event": "minecraft:entity.phantom.swoop",
-    "interval": [20, 60],
+    "event": "anomalies:voronok_ambient",
+    "interval": [60, 120],
     "source": "BLOCKS",
-    "volume": 0.8,
-    "pitch": 0.6
+    "volume": 1.0,
+    "pitch": 0.4
   },
   "trigger": {
     "expandRadius": 1.5,
