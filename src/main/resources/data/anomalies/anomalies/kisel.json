@@ -24,14 +24,16 @@
     "expandRadius": 0.3,
     "interval": 5
   },
-  "behavior": {
-    "damage": 3.0,
+  "damage": {
+    "amount": 3.0,
     "fireSeconds": 0,
+    "damage_type": "cactus"
+  },
+  "physics": {
     "impulseX": 0.0,
     "impulseY": 0.0,
     "impulseZ": 0.0,
-    "pullToCenter": false,
-    "ignoreOtherAnomalies": true,
-    "damage_type": "cactus"
-  }
+    "pullToCenter": false
+  },
+  "ignoreOtherAnomalies": true
 }

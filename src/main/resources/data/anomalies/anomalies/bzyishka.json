@@ -24,14 +24,16 @@
     "expandRadius": 0.8,
     "interval": 5
   },
-  "behavior": {
-    "damage": 1.0,
+  "damage": {
+    "amount": 1.0,
     "fireSeconds": 0,
+    "damage_type": "lightning"
+  },
+  "physics": {
     "impulseX": 0.0,
     "impulseY": 0.0,
     "impulseZ": 0.0,
-    "pullToCenter": false,
-    "ignoreOtherAnomalies": true,
-    "damage_type": "lightning"
-  }
+    "pullToCenter": false
+  },
+  "ignoreOtherAnomalies": true
 }

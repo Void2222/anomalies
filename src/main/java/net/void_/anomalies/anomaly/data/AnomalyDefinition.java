@@ -7,5 +7,7 @@ public record AnomalyDefinition(
         List<ParticleConfig> particles,
         SoundConfig sound,
         TriggerConfig trigger,
-        BehaviorConfig behavior
+        DamageConfig damage,       // 🌟 Вынесли урон в отдельный блок
+        PhysicsConfig physics,     // 🌟 Вынесли физику в отдельный блок
+        Boolean ignoreOtherAnomalies // Или оставим верхнеуровневым правилом
 ) {}

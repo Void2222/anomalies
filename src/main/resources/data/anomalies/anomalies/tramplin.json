@@ -24,15 +24,16 @@
     "expandRadius": 0.5,
     "interval": 5
   },
-  "behavior": {
-    "damage": 0,
+  "damage": {
+    "amount": 0,
     "fireSeconds": 0,
+    "damage_type": "fall"
+  },
+  "physics": {
     "impulseX": 0.0,
     "impulseY": 1.2,
     "impulseZ": 0.0,
-    "pullToCenter": false,
-    "ignoreOtherAnomalies": false,
-    "damage_type": "fall"
-  }
+    "pullToCenter": false
+  },
+  "ignoreOtherAnomalies": false
 }
-

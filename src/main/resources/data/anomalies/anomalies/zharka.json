@@ -32,14 +32,16 @@
     "expandRadius": 0.3,
     "interval": 10
   },
-  "behavior": {
-    "damage": 4.0,
+  "damage": {
+    "amount": 4.0,
     "fireSeconds": 6,
+    "damage_type": "fire"
+  },
+  "physics": {
     "impulseX": 0.0,
     "impulseY": 0.0,
     "impulseZ": 0.0,
-    "pullToCenter": false,
-    "ignoreOtherAnomalies": true,
-    "damage_type": "fire"
-  }
+    "pullToCenter": false
+  },
+  "ignoreOtherAnomalies": true
 }
