@@ -41,6 +41,13 @@ public class ZoneFactory {
             anomaly.addComponent(new TriggerComponent(t.expandRadius(), t.interval(), (anom, target) -> {
                 if (b.ignoreOtherAnomalies() && target instanceof AnomalyEntity) return;
 
+                net.void_.anomalies.api.event.AnomalyTriggerEvent event =
+                        new net.void_.anomalies.api.event.AnomalyTriggerEvent(anom, target, anom.getAnomalyType());
+
+                if (net.minecraftforge.common.MinecraftForge.EVENT_BUS.post(event)) {
+                    return;
+                }
+
                 boolean isItem = target instanceof net.minecraft.world.entity.item.ItemEntity;
 
                 if (!isItem && b.fireSeconds() > 0) {

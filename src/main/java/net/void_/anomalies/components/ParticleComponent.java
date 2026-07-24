@@ -22,7 +22,7 @@ public class ParticleComponent implements IAnomalyComponent {
     private int nextTriggerTick;
 
     // 🌟 Радиус отрисовки партиклов (в блоках). Если игрок дальше — аномалия "спит" на клиенте
-    private static final double RENDER_DISTANCE = 69.0D;
+    private static final double RENDER_DISTANCE = 70.0D;
 
     public ParticleComponent(ParticleOptions particleType, MinMaxRange intervalRange, Shape shape, double radius, double height, MinMaxRange countRange) {
         this.particleType = particleType;
