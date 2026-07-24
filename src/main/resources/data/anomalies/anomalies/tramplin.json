@@ -31,7 +31,8 @@
     "impulseY": 1.2,
     "impulseZ": 0.0,
     "pullToCenter": false,
-    "ignoreOtherAnomalies": false
+    "ignoreOtherAnomalies": false,
+    "damage_type": "fall"
   }
 }
 

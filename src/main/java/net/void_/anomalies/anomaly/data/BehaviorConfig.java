@@ -7,5 +7,6 @@ public record BehaviorConfig(
         double impulseY,
         double impulseZ,
         boolean pullToCenter,
-        boolean ignoreOtherAnomalies
+        boolean ignoreOtherAnomalies,
+        String damageType
 ) {}

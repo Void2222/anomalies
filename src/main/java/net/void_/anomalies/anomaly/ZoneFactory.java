@@ -31,8 +31,18 @@ public class ZoneFactory {
             var b = definition.behavior();
             var t = definition.trigger();
 
+            net.minecraft.world.damagesource.DamageSource damageSource;
+            String dType = b.damageType() != null ? b.damageType().toLowerCase() : "generic";
+
+            switch (dType) {
+                case "fire" -> damageSource = anomaly.level().damageSources().inFire();
+                case "lightning" -> damageSource = anomaly.level().damageSources().lightningBolt();
+                case "magic" -> damageSource = anomaly.level().damageSources().magic();
+                default -> damageSource = anomaly.level().damageSources().generic(); // Чистый урон по умолчанию
+            }
+
             DamageComponent damageComp = !b.damage().isZero()
-                    ? new DamageComponent(b.damage(), anomaly.level().damageSources().generic())
+                    ? new DamageComponent(b.damage(), damageSource)
                     : null;
             ImpulseComponent impulseComp = (b.impulseX() != 0 || b.impulseY() != 0 || b.impulseZ() != 0)
                     ? new ImpulseComponent(b.impulseX(), b.impulseY(), b.impulseZ(), b.pullToCenter())

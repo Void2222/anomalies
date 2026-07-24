@@ -31,6 +31,7 @@
     "impulseY": -0.11,
     "impulseZ": 0.13,
     "pullToCenter": true,
-    "ignoreOtherAnomalies": true
+    "ignoreOtherAnomalies": true,
+    "damage_type": "outside_border"
   }
 }
