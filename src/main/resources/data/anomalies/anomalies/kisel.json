@@ -21,18 +21,15 @@
     "pitch": 0.8
   },
   "trigger": {
-    "expandRadius": 0.3,
+    "expandRadius": 1.2,
     "interval": 5
   },
   "damage": {
     "amount": 3.0,
     "fireSeconds": 0,
-    "damage_type": "cactus"
+    "damageType": "cactus"
   },
   "physics": {
-    "impulseX": 0.0,
-    "impulseY": 0.0,
-    "impulseZ": 0.0,
     "pullToCenter": false
   },
   "ignoreOtherAnomalies": true

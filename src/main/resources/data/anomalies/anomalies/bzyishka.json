@@ -27,12 +27,9 @@
   "damage": {
     "amount": 1.0,
     "fireSeconds": 0,
-    "damage_type": "lightning"
+    "damageType": "lightning"
   },
   "physics": {
-    "impulseX": 0.0,
-    "impulseY": 0.0,
-    "impulseZ": 0.0,
     "pullToCenter": false
   },
   "ignoreOtherAnomalies": true

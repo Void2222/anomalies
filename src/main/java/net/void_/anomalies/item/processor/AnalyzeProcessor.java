@@ -26,23 +26,26 @@ public class AnalyzeProcessor {
         // 2. Урон и Триггер
         if (def != null && def.trigger() != null) {
             double radius = overrides.contains("expandRadius") ? overrides.getDouble("expandRadius") : def.trigger().expandRadius();
-            double damage = overrides.contains("damage") ? overrides.getDouble("damage") : (def.damage() != null && def.damage().amount() != null ? def.damage().amount().getMax() : 0.0);
+
+            // 🌟 Учитываем раздельный урон (outer / inner)
+            double outerDmg = overrides.contains("outerDamage") ? overrides.getDouble("outerDamage") : (def.damage() != null && def.damage().outerAmount() != null ? def.damage().outerAmount().getMax() : 0.0);
+            double innerDmg = overrides.contains("innerDamage") ? overrides.getDouble("innerDamage") : (def.damage() != null && def.damage().innerAmount() != null ? def.damage().innerAmount().getMax() : 0.0);
             int fire = overrides.contains("fireSeconds") ? overrides.getInt("fireSeconds") : (def.damage() != null ? def.damage().fireSeconds() : 0);
 
-            player.sendSystemMessage(Component.literal("§c⚔ Урон: " + formatVal("damage", damage, overrides) + " §7| §cПоджог: " + formatVal("fireSeconds", fire + "s", overrides)));
+            player.sendSystemMessage(Component.literal("§c⚔ Урон (Внеш/Внутр): " + formatVal("outerDamage", outerDmg, overrides) + " §7/ " + formatVal("innerDamage", innerDmg, overrides) + " §7| §cПоджог: " + formatVal("fireSeconds", fire + "s", overrides)));
             player.sendSystemMessage(Component.literal("§a🎯 Зона триггера (Радиус): " + formatVal("expandRadius", radius, overrides)));
         }
 
-        // 3. Физика (Импульсы)
+        // 3. Физика (Импульсы и Зоны)
         if (def != null && def.physics() != null) {
-            double impX = overrides.contains("impulseX") ? overrides.getDouble("impulseX") : def.physics().impulseX();
-            double impY = overrides.contains("impulseY") ? overrides.getDouble("impulseY") : def.physics().impulseY();
-            double impZ = overrides.contains("impulseZ") ? overrides.getDouble("impulseZ") : def.physics().impulseZ();
+            double outRad = overrides.contains("outerRadius") ? overrides.getDouble("outerRadius") : (def.physics().outerRadius() != null ? def.physics().outerRadius() : 0.0);
+            double inRad = overrides.contains("innerRadius") ? overrides.getDouble("innerRadius") : (def.physics().innerRadius() != null ? def.physics().innerRadius() : 0.0);
+            double pForce = overrides.contains("pullForce") ? overrides.getDouble("pullForce") : (def.physics().pullForce() != null ? def.physics().pullForce() : 0.0);
+            double sForce = overrides.contains("spinForce") ? overrides.getDouble("spinForce") : (def.physics().spinForce() != null ? def.physics().spinForce() : 0.0);
             boolean pull = overrides.contains("pullToCenter") ? overrides.getBoolean("pullToCenter") : def.physics().pullToCenter();
 
-            player.sendSystemMessage(Component.literal("§d🌀 Физика (Импульс): §7X=" + formatVal("impulseX", impX, overrides) +
-                    " §7Y=" + formatVal("impulseY", impY, overrides) +
-                    " §7Z=" + formatVal("impulseZ", impZ, overrides)));
+            player.sendSystemMessage(Component.literal("§d🌀 Гравитация: §7ВнешнийR=" + formatVal("outerRadius", outRad, overrides) + " §7| ВнутреннийR=" + formatVal("innerRadius", inRad, overrides)));
+            player.sendSystemMessage(Component.literal("§d🌀 Силы: §7Тяга=" + formatVal("pullForce", pForce, overrides) + " §7| Вращение=" + formatVal("spinForce", sForce, overrides)));
             player.sendSystemMessage(Component.literal("§d🌀 Втягивание в центр: " + formatVal("pullToCenter", pull, overrides)));
         }
 

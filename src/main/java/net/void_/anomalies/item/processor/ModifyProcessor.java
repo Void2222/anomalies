@@ -52,11 +52,9 @@ public class ModifyProcessor {
         // 📜 Полное меню подсказок возвращено на базу!
         player.sendSystemMessage(Component.literal("============== §b[ СЕССИЯ ИЗМЕНЕНИЯ ] §r==============").withStyle(ChatFormatting.BOLD));
         player.sendSystemMessage(Component.literal("§aАномалия выбрана! (UUID: §f" + shortUuid + "...§a)"));
-        player.sendSystemMessage(Component.literal("============== §b[ Категория параметров ] §r==============").withStyle(ChatFormatting.BOLD));
-        player.sendSystemMessage(Component.literal("§7Доступные категории параметров:"));
         player.sendSystemMessage(Component.literal(" §e• Размеры: §fwidth, height"));
-        player.sendSystemMessage(Component.literal(" §e• Физика: §fimpulseX, impulseY, impulseZ, pullToCenter (true/false)"));
-        player.sendSystemMessage(Component.literal(" §e• Бой: §fdamage, fireSeconds, expandRadius, triggerInterval"));
+        player.sendSystemMessage(Component.literal(" §e• Физика: §fouterRadius, innerRadius, pullForce, spinForce, impulseY, pullToCenter (true/false)"));
+        player.sendSystemMessage(Component.literal(" §e• Бой: §fdamage, outerDamage, innerDamage, fireSeconds, expandRadius, triggerInterval"));
         player.sendSystemMessage(Component.literal(" §e• Звуки: §fsoundVolume, soundPitch, soundIntervalMin, soundIntervalMax"));
         player.sendSystemMessage(Component.literal(" §e• Частицы: §fparticleRadius, particleHeight, particleCountMin, particleCountMax"));
         player.sendSystemMessage(Component.literal("§7Можно менять сразу несколько через '§f;§7' (пример: §fwidth 3.0; damage 15§7)"));
@@ -113,6 +111,7 @@ public class ModifyProcessor {
                     anomaly.getCustomOverrides().putBoolean(param, val);
                     successApplied.add("§e" + param + "§a=§f" + val);
                 } else if (param.equals("fireSeconds")) {
+
                     int val = (int) Double.parseDouble(rawVal);
                     anomaly.getCustomOverrides().putInt(param, val);
                     successApplied.add("§e" + param + "§a=§f" + val);
@@ -139,7 +138,6 @@ public class ModifyProcessor {
 
         return true;
     }
-
     public static void clearSession(CompoundTag tag) {
         tag.remove("WaitingForParams");
         tag.remove("SelectedAnomaly");

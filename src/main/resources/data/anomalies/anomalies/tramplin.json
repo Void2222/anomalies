@@ -27,12 +27,10 @@
   "damage": {
     "amount": 0,
     "fireSeconds": 0,
-    "damage_type": "fall"
+    "damageType": "fall"
   },
   "physics": {
-    "impulseX": 0.0,
     "impulseY": 1.2,
-    "impulseZ": 0.0,
     "pullToCenter": false
   },
   "ignoreOtherAnomalies": false

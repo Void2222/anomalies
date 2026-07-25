@@ -1,0 +1,50 @@
+{
+  "size": {
+    "width": 1.2,
+    "height": 1.2
+  },
+  "particles": [
+    {
+      "type": "minecraft:end_rod",
+      "shape": "CYLINDER",
+      "interval": 1,
+      "radius": 1.5,
+      "height": 1.5,
+      "count": 10
+    },
+    {
+      "type": "minecraft:flash",
+      "shape": "CYLINDER",
+      "interval": 20,
+      "radius": 0.5,
+      "height": 0.5,
+      "count": 1
+    }
+  ],
+  "sound": {
+    "event": "minecraft:block.beacon.ambient",
+    "interval": [40, 80],
+    "source": "BLOCKS",
+    "volume": 1.0,
+    "pitch": 2.0
+  },
+  "trigger": {
+    "expandRadius": 6.0,
+    "interval": 2
+  },
+  "damage": {
+    "outerAmount": 1.0,
+    "innerAmount": 5.0,
+    "fireSeconds": 0,
+    "damageType": "explosion"
+  },
+  "physics": {
+    "pullToCenter": false,
+    "outerRadius": 6.0,
+    "innerRadius": 2.0,
+    "pullForce": -0.15,
+    "spinForce": 0.0,
+    "impulseY": 0.1
+  },
+  "ignoreOtherAnomalies": true
+}

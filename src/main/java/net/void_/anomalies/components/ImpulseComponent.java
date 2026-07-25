@@ -10,50 +10,84 @@ public class ImpulseComponent implements IAnomalyComponent {
     private final double xMultiplier;
     private final double yMultiplier;
     private final double zMultiplier;
-    private final boolean pullToCenter; // Если true, то затягивает к центру аномалии, иначе просто толкает по векторам
+    private final boolean pullToCenter;
 
-    /**
-     * @param xMultiplier Множитель/сила по оси X
-     * @param yMultiplier Множитель/сила по оси Y (например, подброс вверх: 0.8D)
-     * @param zMultiplier Множитель/сила по оси Z
-     * @param pullToCenter Использовать ли физику притяжения к центру
-     */
-    public ImpulseComponent(double xMultiplier, double yMultiplier, double zMultiplier, boolean pullToCenter) {
+    // 🌟 Параметры двухзонности
+    private final double outerRadius;
+    private final double innerRadius;
+    private final double pullForce;
+    private final double spinForce;
+
+    public ImpulseComponent(double xMultiplier, double yMultiplier, double zMultiplier, boolean pullToCenter,
+                            double outerRadius, double innerRadius, double pullForce, double spinForce) {
         this.xMultiplier = xMultiplier;
         this.yMultiplier = yMultiplier;
         this.zMultiplier = zMultiplier;
         this.pullToCenter = pullToCenter;
+
+        this.outerRadius = outerRadius;
+        this.innerRadius = innerRadius;
+        this.pullForce = pullForce;
+        this.spinForce = spinForce;
     }
 
+    @Override
+    public void serverTick(AnomalyEntity anomaly) {}
+    @Override
+    public void clientTick(AnomalyEntity anomaly) {}
+
     /**
-     * Метод для вызова из TriggerComponent при попадании в зону
+     * Применяет импульс.
+     * 🌟 Возвращает TRUE, если игрок находится в ЗОНЕ СМЕРТИ (innerRadius) или если это обычная аномалия.
+     * Возвращает FALSE, если игрок лишь во внешней зоне притяжения.
      */
-    public void applyImpulse(AnomalyEntity anomaly, Entity target) {
-        if (target == null || !target.isAlive()) return;
+    public boolean applyImpulse(AnomalyEntity anomaly, Entity target) {
+        if (target == null || !target.isAlive()) return false;
+
+        boolean inDangerZone = true; // По умолчанию для старых аномалий считаем, что мы в опасности
 
         if (pullToCenter) {
-            // Вычисляем вектор от цели к центру аномалии
-            Vec3 anomalyPos = anomaly.position().add(0, anomaly.getBbHeight() / 2, 0); // Центр аномалии
+            Vec3 anomalyPos = anomaly.position().add(0, anomaly.getBbHeight() / 2.0, 0);
             Vec3 targetPos = target.position();
-
+            double distance = anomalyPos.distanceTo(targetPos);
             Vec3 direction = anomalyPos.subtract(targetPos).normalize();
 
-            // Применяем притяжение с заданными коэффициентами
-            target.setDeltaMovement(
-                    target.getDeltaMovement().add(
-                            direction.x * xMultiplier,
-                            yMultiplier, // часто вверх или тоже к центру
-                            direction.z * zMultiplier
-                    )
-            );
+            // 🌟 ДВУХЗОННАЯ ЛОГИКА (Если заданы радиусы)
+            if (outerRadius > 0 && innerRadius > 0) {
+                if (distance <= innerRadius) {
+                    // ЗОНА СМЕРТИ: Бешеное затягивание + Ураганное вращение
+                    double closenessFactor = 1.0 - (distance / innerRadius);
+                    double aggressiveSpin = spinForce * (1.5 + (closenessFactor * 3.0));
+
+                    Vec3 spinVector = new Vec3(-direction.z, 0, direction.x).normalize().scale(aggressiveSpin);
+
+                    target.setDeltaMovement(target.getDeltaMovement()
+                            .add(direction.scale(pullForce * 2.5)) // Мощнейший рывок к центру
+                            .add(spinVector)                       // Ураганное кручение по касательной
+                            .add(0, yMultiplier * 2.0, 0));        // Пулл вверх
+
+                    inDangerZone = true;
+                } else if (distance <= outerRadius) {
+                    // ВНЕШНЯЯ ЗОНА: Легкое притяжение
+                    target.setDeltaMovement(target.getDeltaMovement().add(direction.scale(pullForce)));
+                    inDangerZone = false;
+                } else {
+                    // Игрок вообще вне зоны (на всякий случай)
+                    return false;
+                }
+            }
+            // СТАРАЯ ЛОГИКА (обычное притяжение)
+            else {
+                target.setDeltaMovement(
+                        target.getDeltaMovement().add(direction.x * xMultiplier, yMultiplier, direction.z * zMultiplier)
+                );
+            }
         } else {
-            // Просто пихаем с заданным импульсом (например, резкий скачок вверх для Трамплина)
-            target.setDeltaMovement(
-                    target.getDeltaMovement().add(xMultiplier, yMultiplier, zMultiplier)
-            );
+            // Обычный толчок (Трамплин и т.д.)
+            target.setDeltaMovement(target.getDeltaMovement().add(xMultiplier, yMultiplier, zMultiplier));
         }
 
-        // Обязательно помечаем на сервере, что скорость сущности изменилась, чтобы пакет улетел клиенту
         target.hurtMarked = true;
+        return inDangerZone;
     }
 }

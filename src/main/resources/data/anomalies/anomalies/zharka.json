@@ -35,12 +35,9 @@
   "damage": {
     "amount": 4.0,
     "fireSeconds": 6,
-    "damage_type": "fire"
+    "damageType": "fire"
   },
   "physics": {
-    "impulseX": 0.0,
-    "impulseY": 0.0,
-    "impulseZ": 0.0,
     "pullToCenter": false
   },
   "ignoreOtherAnomalies": true
