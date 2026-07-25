@@ -32,18 +32,26 @@
     "expandRadius": 6.0,
     "interval": 2
   },
-  "damage": {
-    "outerAmount": 1.0,
-    "innerAmount": 5.0,
-    "fireSeconds": 0,
-    "damageType": "explosion"
-  },
+  "zones": [
+    {
+      "radius": 2.0,
+      "damage": {
+        "innerAmount": 5.0,
+        "fireSeconds": 0,
+        "damageType": "explosion"
+      }
+    },
+    {
+      "radius": 6.0,
+      "damage": {
+        "innerAmount": 1.0,
+        "fireSeconds": 0,
+        "damageType": "explosion"
+      }
+    }
+  ],
   "physics": {
     "pullToCenter": false,
-    "outerRadius": 6.0,
-    "innerRadius": 2.0,
-    "pullForce": -0.15,
-    "spinForce": 0.0,
     "impulseY": 0.1
   },
   "ignoreOtherAnomalies": true

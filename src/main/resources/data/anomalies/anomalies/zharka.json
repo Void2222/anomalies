@@ -32,11 +32,16 @@
     "expandRadius": 0.3,
     "interval": 10
   },
-  "damage": {
-    "amount": 4.0,
-    "fireSeconds": 6,
-    "damageType": "fire"
-  },
+  "zones": [
+    {
+      "radius": 0.3,
+      "damage": {
+        "innerAmount": 4.0,
+        "fireSeconds": 6,
+        "damageType": "fire"
+      }
+    }
+  ],
   "physics": {
     "pullToCenter": false
   },

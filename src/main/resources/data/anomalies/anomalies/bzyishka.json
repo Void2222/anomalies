@@ -24,11 +24,16 @@
     "expandRadius": 0.8,
     "interval": 5
   },
-  "damage": {
-    "amount": 1.0,
-    "fireSeconds": 0,
-    "damageType": "lightning"
-  },
+  "zones": [
+    {
+      "radius": 0.8,
+      "damage": {
+        "innerAmount": 1.0,
+        "fireSeconds": 0,
+        "damageType": "lightning"
+      }
+    }
+  ],
   "physics": {
     "pullToCenter": false
   },

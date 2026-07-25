@@ -24,11 +24,16 @@
     "expandRadius": 0.5,
     "interval": 5
   },
-  "damage": {
-    "amount": 0,
-    "fireSeconds": 0,
-    "damageType": "fall"
-  },
+  "zones": [
+    {
+      "radius": 0.5,
+      "damage": {
+        "innerAmount": 0,
+        "fireSeconds": 0,
+        "damageType": "fall"
+      }
+    }
+  ],
   "physics": {
     "impulseY": 1.2,
     "pullToCenter": false

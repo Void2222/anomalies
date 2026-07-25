@@ -24,11 +24,16 @@
     "expandRadius": 1.2,
     "interval": 5
   },
-  "damage": {
-    "amount": 3.0,
-    "fireSeconds": 0,
-    "damageType": "cactus"
-  },
+  "zones": [
+    {
+      "radius": 1.2,
+      "damage": {
+        "innerAmount": 3.0,
+        "fireSeconds": 0,
+        "damageType": "cactus"
+      }
+    }
+  ],
   "physics": {
     "pullToCenter": false
   },

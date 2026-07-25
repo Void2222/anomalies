@@ -15,6 +15,8 @@ import net.void_.anomalies.components.*;
 import net.void_.anomalies.core.AnomalyEntity;
 import net.void_.anomalies.setup.EntityInit;
 
+import java.util.List;
+
 public class ZoneFactory {
 
     public static void applyComponents(AnomalyEntity anomaly, String type) {
@@ -89,11 +91,11 @@ public class ZoneFactory {
             anomaly.addComponent(new SoundComponent(soundEvent, soundInterval, soundSource, volume, pitch));
         }
 
-        // 🌟 4. ТРИГГЕР, УРОН И ФИЗИКА
+        // 🌟 4. ТРИГГЕР, ЗОНЫ И ФИЗИКА
         if (definition.trigger() != null) {
             TriggerConfig t = definition.trigger();
-            DamageConfig d = definition.damage();
-            PhysicsConfig p = definition.physics();
+            List<ZoneConfig> zones = definition.zones();
+            PhysicsConfig generalPhysics = definition.physics();
             boolean ignoreAnomalies = definition.ignoreOtherAnomalies();
 
             double expandRadius = overrides.contains("expandRadius") ? overrides.getDouble("expandRadius") : t.expandRadius();
@@ -103,70 +105,30 @@ public class ZoneFactory {
                     (t.interval() != null ? t.interval().getDouble() : 5);
             MinMaxRange triggerInterval = new MinMaxRange(tIntMin, tIntMin);
 
-            // Урон
-            // 🌟 УРОН (Поддерживаем внешний и внутренний, с учетом оверрайдов)
-            final DamageComponent outerDamageComp;
-            final DamageComponent innerDamageComp;
-            String dType = (d != null && d.damageType() != null) ? d.damageType().toLowerCase() : "generic";
-            var dmgSource = getDamageSource(anomaly, dType);
-
-            // Если переопределили общий damage в NBT, кидаем его во внутренний урон
-            if (overrides.contains("damage")) {
-                double customDmg = overrides.getDouble("damage");
-                outerDamageComp = null;
-                innerDamageComp = new DamageComponent(new MinMaxRange(customDmg, customDmg), dmgSource);
-            } else {
-                // Внешний урон (если задан)
-                double outDmgOverride = overrides.contains("outerDamage") ? overrides.getDouble("outerDamage") : -1;
-                if (outDmgOverride >= 0) {
-                    outerDamageComp = new DamageComponent(new MinMaxRange(outDmgOverride, outDmgOverride), dmgSource);
-                } else {
-                    outerDamageComp = (d != null && d.outerAmount() != null && !d.outerAmount().isZero()) ? new DamageComponent(d.outerAmount(), dmgSource) : null;
-                }
-
-                // Внутренний урон
-                double inDmgOverride = overrides.contains("innerDamage") ? overrides.getDouble("innerDamage") : -1;
-                if (inDmgOverride >= 0) {
-                    innerDamageComp = new DamageComponent(new MinMaxRange(inDmgOverride, inDmgOverride), dmgSource);
-                } else {
-                    innerDamageComp = (d != null && d.innerAmount() != null && !d.innerAmount().isZero()) ? new DamageComponent(d.innerAmount(), dmgSource) : null;
-                }
-            }
-
-            // Физика
-            double impX = overrides.contains("impulseX") ? overrides.getDouble("impulseX") : (p != null ? p.impulseX() : 0);
-            double impY = overrides.contains("impulseY") ? overrides.getDouble("impulseY") : (p != null ? p.impulseY() : 0);
-            double impZ = overrides.contains("impulseZ") ? overrides.getDouble("impulseZ") : (p != null ? p.impulseZ() : 0);
-            boolean pullToCenter = overrides.contains("pullToCenter") ? overrides.getBoolean("pullToCenter") : (p != null && p.pullToCenter());
-
-            // 🌟 Считываем новые параметры (Сначала ищем в NBT, затем в JSON конфиге)
-            double oRad = overrides.contains("outerRadius") ? overrides.getDouble("outerRadius") : (p != null && p.outerRadius() != null ? p.outerRadius() : 0);
-            double iRad = overrides.contains("innerRadius") ? overrides.getDouble("innerRadius") : (p != null && p.innerRadius() != null ? p.innerRadius() : 0);
-            double pForce = overrides.contains("pullForce") ? overrides.getDouble("pullForce") : (p != null && p.pullForce() != null ? p.pullForce() : 0);
-            double sForce = overrides.contains("spinForce") ? overrides.getDouble("spinForce") : (p != null && p.spinForce() != null ? p.spinForce() : 0);
+            // Общие параметры физики
+            double impX = generalPhysics != null ? generalPhysics.impulseX() : 0;
+            double impY = generalPhysics != null ? generalPhysics.impulseY() : 0;
+            double impZ = generalPhysics != null ? generalPhysics.impulseZ() : 0;
+            boolean pullToCenter = generalPhysics != null && generalPhysics.pullToCenter();
 
             final ImpulseComponent impulseComp;
-            if (impX != 0 || impY != 0 || impZ != 0 || oRad > 0) {
-                // Передаем все параметры в компонент
-                impulseComp = new ImpulseComponent(impX, impY, impZ, pullToCenter, oRad, iRad, pForce, sForce);
+            if (zones != null && !zones.isEmpty()) {
+                impulseComp = new ImpulseComponent(impX, impY, impZ, pullToCenter, zones);
             } else {
                 impulseComp = null;
             }
 
-            // Поджог
-            final int fireSecs = overrides.contains("fireSeconds") ? overrides.getInt("fireSeconds") : ((d != null) ? d.fireSeconds() : 0);
-
             anomaly.addComponent(new TriggerComponent(expandRadius, triggerInterval, (anom, target) -> {
                 if (ignoreAnomalies && target instanceof AnomalyEntity) return;
 
-                // 🌟 ПРИМЕНЯЕМ ИМПУЛЬС ПЕРВЫМ ДЕЛОМ И ПРОВЕРЯЕМ ЗОНУ
-                boolean isInDangerZone = true;
+                // Применяем физику импульса
                 if (impulseComp != null) {
-                    isInDangerZone = impulseComp.applyImpulse(anom, target);
+                    impulseComp.applyImpulse(anom, target);
                 }
 
-                // 🌟 ЕСЛИ МЫ ВО ВНЕШНЕЙ ЗОНЕ — ПРЕРЫВАЕМ ЛЯМБДУ (урона и ивентов не будет)
-                if (!isInDangerZone) return;
+                // Определяем активную зону по расстоянию
+                ZoneConfig activeZone = impulseComp != null ? impulseComp.getActiveZone(anom, target) : null;
+                if (activeZone == null) return; // Вне зон
 
                 boolean isItem = target instanceof net.minecraft.world.entity.item.ItemEntity;
 
@@ -179,14 +141,19 @@ public class ZoneFactory {
                             new net.void_.anomalies.api.event.AnomalyTriggerEvent(anom, target, anom.getAnomalyType());
                     if (net.minecraftforge.common.MinecraftForge.EVENT_BUS.post(event)) return;
 
-                    // 🌟 РАЗДЕЛЕНИЕ УРОНА ПО ЗОНАМ
-                    if (isInDangerZone) {
-                        // Эпицентр: полный урон + поджог
-                        if (fireSecs > 0) target.setSecondsOnFire(fireSecs);
-                        if (innerDamageComp != null) innerDamageComp.inflictDamage(target);
-                    } else {
-                        // Внешняя зона: легкий урон (если настроен)
-                        if (outerDamageComp != null) outerDamageComp.inflictDamage(target);
+                    // Наносим урон и поджог из параметров активной зоны
+                    if (activeZone.damage() != null) {
+                        DamageConfig dConfig = activeZone.damage();
+                        if (dConfig.fireSeconds() > 0) {
+                            target.setSecondsOnFire(dConfig.fireSeconds());
+                        }
+
+                        double dmgAmount = (dConfig.innerAmount() != null) ? dConfig.innerAmount().getDouble() : 0.0;
+                        if (dmgAmount > 0) {
+                            String dType = dConfig.damageType() != null ? dConfig.damageType().toLowerCase() : "generic";
+                            var dmgComp = new DamageComponent(new MinMaxRange(dmgAmount, dmgAmount), getDamageSource(anom, dType));
+                            dmgComp.inflictDamage(target);
+                        }
                     }
                 }
             }));

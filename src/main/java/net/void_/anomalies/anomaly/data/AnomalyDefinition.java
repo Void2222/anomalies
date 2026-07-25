@@ -7,7 +7,7 @@ public record AnomalyDefinition(
         List<ParticleConfig> particles,
         SoundConfig sound,
         TriggerConfig trigger,
-        DamageConfig damage,       // 🌟 Вынесли урон в отдельный блок
-        PhysicsConfig physics,     // 🌟 Вынесли физику в отдельный блок
-        Boolean ignoreOtherAnomalies // Или оставим верхнеуровневым правилом
+        List<ZoneConfig> zones,          // 🌟 Все слои аномалии (от центра к периферии)
+        PhysicsConfig physics,           // Общие импульсы (если нужны, типа impulseY)
+        Boolean ignoreOtherAnomalies
 ) {}
