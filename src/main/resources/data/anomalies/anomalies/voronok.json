@@ -31,20 +31,47 @@
         "innerAmount": 8.0,
         "fireSeconds": 0,
         "damageType": "outside_border"
+      },
+      "physics": {
+        "pullToCenter": true,
+        "pullForce": 0.12,
+        "spinForce": 0.3,
+        "impulseY": 0.15
+      }
+    },
+    {
+      "radius": 3.5,
+      "physics": {
+        "pullToCenter": true,
+        "pullForce": 0.07,
+        "spinForce": 0.18,
+        "impulseY": 0.08
+      }
+    },
+    {
+      "radius": 5.5,
+      "physics": {
+        "pullToCenter": true,
+        "pullForce": 0.035,
+        "spinForce": 0.1,
+        "impulseY": 0.04
       }
     },
     {
       "radius": 8.0,
-      "damage": {
-        "innerAmount": 0.5,
-        "fireSeconds": 0,
-        "damageType": "outside_border"
+      "physics": {
+        "pullToCenter": true,
+        "pullForce": 0.015,
+        "spinForce": 0.04,
+        "impulseY": 0.02
       }
     }
   ],
   "physics": {
     "pullToCenter": true,
-    "impulseY": 0.08
+    "pullForce": 0.015,
+    "spinForce": 0.04,
+    "impulseY": 0.02
   },
   "ignoreOtherAnomalies": true
 }

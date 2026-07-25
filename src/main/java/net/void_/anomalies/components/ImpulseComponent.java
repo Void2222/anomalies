@@ -2,6 +2,7 @@ package net.void_.anomalies.components;
 
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
+import net.void_.anomalies.anomaly.data.PhysicsConfig;
 import net.void_.anomalies.anomaly.data.ZoneConfig;
 import net.void_.anomalies.core.AnomalyEntity;
 import net.void_.anomalies.core.IAnomalyComponent;
@@ -15,15 +16,16 @@ public class ImpulseComponent implements IAnomalyComponent {
     private final double yMultiplier;
     private final double zMultiplier;
     private final boolean pullToCenter;
-    private final List<ZoneConfig> zones; // 🌟 Список слоев зон
+    private final PhysicsConfig generalPhysics; // Общая физика из AnomalyDefinition
+    private final List<ZoneConfig> zones;
 
-    public ImpulseComponent(double xMultiplier, double yMultiplier, double zMultiplier, boolean pullToCenter, List<ZoneConfig> zones) {
+    public ImpulseComponent(double xMultiplier, double yMultiplier, double zMultiplier, boolean pullToCenter, PhysicsConfig generalPhysics, List<ZoneConfig> zones) {
         this.xMultiplier = xMultiplier;
         this.yMultiplier = yMultiplier;
         this.zMultiplier = zMultiplier;
         this.pullToCenter = pullToCenter;
+        this.generalPhysics = generalPhysics;
 
-        // Сортируем зоны по радиусу (от центра к периферии)
         if (zones != null) {
             this.zones = zones.stream()
                     .sorted(Comparator.comparingDouble(ZoneConfig::radius))
@@ -38,17 +40,12 @@ public class ImpulseComponent implements IAnomalyComponent {
     @Override
     public void clientTick(AnomalyEntity anomaly) {}
 
-    /**
-     * Находит текущую зону, в которой находится цель (по расстоянию).
-     * Возвращает ZoneConfig или null, если цель вне всех зон.
-     */
     public ZoneConfig getActiveZone(AnomalyEntity anomaly, Entity target) {
         if (target == null || !target.isAlive() || zones.isEmpty()) return null;
 
         Vec3 anomalyPos = anomaly.position().add(0, anomaly.getBbHeight() / 2.0, 0);
         double distance = anomalyPos.distanceTo(target.position());
 
-        // Ищем первый слой, в радиус которого попадает цель
         for (ZoneConfig zone : zones) {
             if (distance <= zone.radius()) {
                 return zone;
@@ -61,49 +58,53 @@ public class ImpulseComponent implements IAnomalyComponent {
         if (target == null || !target.isAlive()) return false;
 
         ZoneConfig activeZone = getActiveZone(anomaly, target);
-        if (activeZone == null) return false; // Вне зон
+        if (activeZone == null) return false;
+
+        // Берем физику из зоны, если она там есть, иначе из общих настроек аномалии
+        PhysicsConfig pConfig = (activeZone.physics() != null) ? activeZone.physics() : generalPhysics;
+
+        double pForce = pConfig != null ? pConfig.pullForce() : 0.05;
+        double sForce = pConfig != null ? pConfig.spinForce() : 0.0;
+        double impY = pConfig != null ? pConfig.impulseY() : yMultiplier;
 
         if (pullToCenter) {
             Vec3 anomalyPos = anomaly.position().add(0, anomaly.getBbHeight() / 2.0, 0);
             Vec3 targetPos = target.position();
             double distance = anomalyPos.distanceTo(targetPos);
-            double maxRadius = zones.get(zones.size() - 1).radius();
-            double normalizedDist = Math.min(distance / maxRadius, 1.0);
 
+            // Вектор направления (если pForce отрицательный, знак инвертируется автоматически)
             Vec3 direction = anomalyPos.subtract(targetPos).normalize();
 
-            double pullForce = 0;
-            double spinForce = 0;
-
-            if (activeZone.physics() != null) {
-                // Если у зоны заданы свои силы из PhysicsConfig
-                // (Можем задействовать поля или оставить дефолт)
-            }
-
-            // Берем параметры сил из конфига зоны (или дефолтные)
-            // Допустим, мы берем pullForce / spinForce из физики зоны:
-            // (Сделаем мягкий расчет на базе полей PhysicsConfig внутри зоны)
-
-            // Для примера затягивания и вращения:
-            double pForce = 0.05; // Можно вытащить из activeZone.physics()
-            double sForce = 0.1;
-
             // Если это самый внутренний слой (эпицентр)
-            if (activeZone == zones.get(0) && zones.size() > 1) {
+            if (zones.size() > 1 && activeZone == zones.get(0)) {
                 double closenessFactor = 1.0 - (distance / activeZone.radius());
                 double aggressiveSpin = sForce * (1.5 + (closenessFactor * 3.0));
                 Vec3 spinVector = new Vec3(-direction.z, 0, direction.x).normalize().scale(aggressiveSpin);
 
                 target.setDeltaMovement(target.getDeltaMovement()
-                        .add(direction.scale(pForce * 2.5))
+                        .add(direction.scale(pForce))
                         .add(spinVector)
-                        .add(0, yMultiplier * 2.0, 0));
+                        .add(0, impY, 0)); // Убрали умножение на 2.0, чтобы не подкидывало высоко
             } else {
-                // Внешние слои: плавное притяжение
-                target.setDeltaMovement(target.getDeltaMovement().add(direction.scale(pForce)));
+                // Внешние слои
+                target.setDeltaMovement(target.getDeltaMovement()
+                        .add(direction.scale(pForce))
+                        .add(0, impY, 0));
             }
+
+            // Защита от катапульты (лимит скорости)
+            Vec3 currentMotion = target.getDeltaMovement();
+            double maxSpeed = 1.0;
+            if (currentMotion.horizontalDistanceSqr() > maxSpeed * maxSpeed) {
+                Vec3 limited = currentMotion.normalize().scale(maxSpeed);
+                target.setDeltaMovement(limited.x, currentMotion.y, limited.z);
+            }
+
         } else {
-            target.setDeltaMovement(target.getDeltaMovement().add(xMultiplier, yMultiplier, zMultiplier));
+            double iX = pConfig != null ? pConfig.impulseX() : xMultiplier;
+            double iY = pConfig != null ? pConfig.impulseY() : yMultiplier;
+            double iZ = pConfig != null ? pConfig.impulseZ() : zMultiplier;
+            target.setDeltaMovement(target.getDeltaMovement().add(iX, iY, iZ));
         }
 
         target.hurtMarked = true;

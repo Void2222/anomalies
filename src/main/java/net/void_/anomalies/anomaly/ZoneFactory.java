@@ -15,6 +15,7 @@ import net.void_.anomalies.components.*;
 import net.void_.anomalies.core.AnomalyEntity;
 import net.void_.anomalies.setup.EntityInit;
 
+import java.util.ArrayList;
 import java.util.List;
 
 public class ZoneFactory {
@@ -94,7 +95,6 @@ public class ZoneFactory {
         // 🌟 4. ТРИГГЕР, ЗОНЫ И ФИЗИКА
         if (definition.trigger() != null) {
             TriggerConfig t = definition.trigger();
-            List<ZoneConfig> zones = definition.zones();
             PhysicsConfig generalPhysics = definition.physics();
             boolean ignoreAnomalies = definition.ignoreOtherAnomalies();
 
@@ -105,7 +105,32 @@ public class ZoneFactory {
                     (t.interval() != null ? t.interval().getDouble() : 5);
             MinMaxRange triggerInterval = new MinMaxRange(tIntMin, tIntMin);
 
-            // Общие параметры физики
+            // Собераем список зон (из оверрайдов или из дефолтного дефинишна)
+            List<ZoneConfig> zones = new ArrayList<>();
+            if (overrides.contains("zones_count")) {
+                int count = overrides.getInt("zones_count");
+                for (int i = 0; i < count; i++) {
+                    double radius = overrides.getDouble("zone_" + i + "_radius");
+                    double dmgAmount = overrides.getDouble("zone_" + i + "_damage");
+                    double pullForce = overrides.getDouble("zone_" + i + "_pullForce");
+                    double spinForce = overrides.getDouble("zone_" + i + "_spinForce");
+                    double impY = overrides.getDouble("zone_" + i + "_impulseY");
+
+                    DamageConfig dConfig = new DamageConfig(
+                            null, // outerAmount
+                            new MinMaxRange(dmgAmount, dmgAmount), // innerAmount
+                            0, // fireSeconds
+                            "outside_border" // damageType
+                    );
+                    PhysicsConfig pConfig = new PhysicsConfig(0, impY, 0, true, pullForce, spinForce);
+
+                    zones.add(new ZoneConfig(radius, dConfig, pConfig));
+                }
+            } else if (definition.zones() != null) {
+                zones = definition.zones();
+            }
+
+            // Общие параметры физики по умолчанию
             double impX = generalPhysics != null ? generalPhysics.impulseX() : 0;
             double impY = generalPhysics != null ? generalPhysics.impulseY() : 0;
             double impZ = generalPhysics != null ? generalPhysics.impulseZ() : 0;
@@ -113,7 +138,7 @@ public class ZoneFactory {
 
             final ImpulseComponent impulseComp;
             if (zones != null && !zones.isEmpty()) {
-                impulseComp = new ImpulseComponent(impX, impY, impZ, pullToCenter, zones);
+                impulseComp = new ImpulseComponent(impX, impY, impZ, pullToCenter, generalPhysics, zones);
             } else {
                 impulseComp = null;
             }

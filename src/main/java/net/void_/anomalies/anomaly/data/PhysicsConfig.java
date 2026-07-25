@@ -4,6 +4,7 @@ public record PhysicsConfig(
         double impulseX,
         double impulseY,
         double impulseZ,
-        boolean pullToCenter
-
+        boolean pullToCenter,
+        double pullForce,
+        double spinForce
 ) {}

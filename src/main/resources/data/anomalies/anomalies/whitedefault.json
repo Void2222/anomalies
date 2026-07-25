@@ -36,9 +36,15 @@
     {
       "radius": 2.0,
       "damage": {
-        "innerAmount": 5.0,
+        "innerAmount": 50.0,
         "fireSeconds": 0,
         "damageType": "explosion"
+      },
+      "physics": {
+        "pullToCenter": true,
+        "pullForce": -0.6,
+        "spinForce": 0.0,
+        "impulseY": 0.4
       }
     },
     {
@@ -47,12 +53,20 @@
         "innerAmount": 1.0,
         "fireSeconds": 0,
         "damageType": "explosion"
+      },
+      "physics": {
+        "pullToCenter": true,
+        "pullForce": -0.08,
+        "spinForce": 0.0,
+        "impulseY": 0.1
       }
     }
   ],
   "physics": {
-    "pullToCenter": false,
-    "impulseY": 0.1
+    "pullToCenter": true,
+    "pullForce": -0.08,
+    "spinForce": 0.0,
+    "impulseY": 0.15
   },
   "ignoreOtherAnomalies": true
 }
