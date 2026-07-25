@@ -1,6 +1,7 @@
 package net.void_.anomalies;
 
 import com.mojang.logging.LogUtils;
+import net.minecraft.world.item.Item;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.eventbus.api.IEventBus;
@@ -8,8 +9,11 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
-
+import net.minecraftforge.registries.DeferredRegister;
+import net.minecraftforge.registries.ForgeRegistries;
+import net.minecraftforge.registries.RegistryObject;
 import net.void_.anomalies.anomaly.loader.AnomalyReloadListener;
+import net.void_.anomalies.item.AnomalyMultitoolItem;
 import net.void_.anomalies.setup.AnomalyCommands;
 import net.void_.anomalies.setup.EntityInit;
 import org.slf4j.Logger;
@@ -19,17 +23,23 @@ public class Anomalies {
     public static final String MOD_ID = "anomalies";
     private static final Logger LOGGER = LogUtils.getLogger();
 
+    // Создаем реестр для предметов
+    public static final DeferredRegister<Item> ITEMS = DeferredRegister.create(ForgeRegistries.ITEMS, MOD_ID);
+
+    // Регистрируем наш мультитул
+    public static final RegistryObject<Item> ANOMALY_MULTITOOL = ITEMS.register("anomaly_multitool",
+            () -> new AnomalyMultitoolItem(new Item.Properties().stacksTo(1)));
+
     public Anomalies() {
         IEventBus modEventBus = FMLJavaModLoadingContext.get().getModEventBus();
 
-        // Регистрация метода общей инициализации
-        modEventBus.addListener(this::commonSetup);
+        // Регистрируем реестр предметов на шине мода
+        ITEMS.register(modEventBus);
 
-        // Регистрация шины событий Forge для игровых событий (например, запуск сервера и т.д.)
+        modEventBus.addListener(this::commonSetup);
         MinecraftForge.EVENT_BUS.register(this);
 
         EntityInit.register(modEventBus);
-
     }
 
     @SubscribeEvent
@@ -38,7 +48,6 @@ public class Anomalies {
     }
 
     private void commonSetup(final FMLCommonSetupEvent event) {
-        // Код общей инициализации мода (выполняется при запуске игры)
         LOGGER.info("INITIALIZING ANOMALIES MOD");
     }
 
@@ -47,4 +56,3 @@ public class Anomalies {
         AnomalyCommands.register(event.getDispatcher());
     }
 }
-
