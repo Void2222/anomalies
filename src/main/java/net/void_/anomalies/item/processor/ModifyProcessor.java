@@ -23,7 +23,6 @@ public class ModifyProcessor {
             player.sendSystemMessage(Component.literal("§b[Изменятор] §aВсе оверрайды аномалии сброшены!")
                     .withStyle(ChatFormatting.BOLD));
 
-            // Если была открыта сессия — закрываем её
             CompoundTag tag = stack.getTag();
             if (tag != null) {
                 clearSession(tag);
@@ -34,7 +33,7 @@ public class ModifyProcessor {
         CompoundTag tag = stack.getOrCreateTag();
         UUID newUuid = anomaly.getUUID();
 
-        // 🎯 Твоя фича: Если уже была открыта сессия для ДРУГОЙ аномалии — авто-сохраняем и уведомляем
+        // Если переключились с другой аномалии — уведомляем о закрытии прошлой сессии
         if (tag.getBoolean("WaitingForParams") && tag.hasUUID("SelectedAnomaly")) {
             UUID oldUuid = tag.getUUID("SelectedAnomaly");
             if (!oldUuid.equals(newUuid)) {
@@ -43,17 +42,25 @@ public class ModifyProcessor {
             }
         }
 
-        // Открываем/обновляем сессию для новой аномалии
+        // Открываем сессию
         tag.putUUID("SelectedAnomaly", newUuid);
         tag.putBoolean("WaitingForParams", true);
-        tag.remove("WaitingForOffset"); // очистка флагов перемещения
+        tag.remove("WaitingForOffset");
 
         String shortUuid = newUuid.toString().substring(0, 8);
+
+        // 📜 Полное меню подсказок возвращено на базу!
         player.sendSystemMessage(Component.literal("============== §b[ СЕССИЯ ИЗМЕНЕНИЯ ] §r==============").withStyle(ChatFormatting.BOLD));
-        player.sendSystemMessage(Component.literal("§aСессия открыта для аномалии §f" + shortUuid + "..."));
-        player.sendSystemMessage(Component.literal("§7Введите параметры через пробел. Можно несколько через '§f;§7'"));
-        player.sendSystemMessage(Component.literal("§8Пример: §fwidth 3.0; damage 15; pullToCenter true"));
-        player.sendSystemMessage(Component.literal("§7Для выхода введите §fdone§7, §fexit§7 или кликните по другой аномалии."));
+        player.sendSystemMessage(Component.literal("§aАномалия выбрана! (UUID: §f" + shortUuid + "...§a)"));
+        player.sendSystemMessage(Component.literal("============== §b[ Категория параметров ] §r==============").withStyle(ChatFormatting.BOLD));
+        player.sendSystemMessage(Component.literal("§7Доступные категории параметров:"));
+        player.sendSystemMessage(Component.literal(" §e• Размеры: §fwidth, height"));
+        player.sendSystemMessage(Component.literal(" §e• Физика: §fimpulseX, impulseY, impulseZ, pullToCenter (true/false)"));
+        player.sendSystemMessage(Component.literal(" §e• Бой: §fdamage, fireSeconds, expandRadius, triggerInterval"));
+        player.sendSystemMessage(Component.literal(" §e• Звуки: §fsoundVolume, soundPitch, soundIntervalMin, soundIntervalMax"));
+        player.sendSystemMessage(Component.literal(" §e• Частицы: §fparticleRadius, particleHeight, particleCountMin, particleCountMax"));
+        player.sendSystemMessage(Component.literal("§7Можно менять сразу несколько через '§f;§7' (пример: §fwidth 3.0; damage 15§7)"));
+        player.sendSystemMessage(Component.literal("§7Для выхода введите §fdone§7 или кликните по другой аномалии."));
         player.sendSystemMessage(Component.literal("==================================================").withStyle(ChatFormatting.BOLD));
     }
 
@@ -65,10 +72,10 @@ public class ModifyProcessor {
 
         String trimmed = message.trim();
 
-        // Команды завершения сессии
+        // Завершение сессии
         if (trimmed.equalsIgnoreCase("done") || trimmed.equalsIgnoreCase("exit") || trimmed.equalsIgnoreCase("save")) {
             clearSession(tag);
-            player.sendSystemMessage(Component.literal("§b[Изменятор] §aСессия редактирования успешно завершена и сохранена!"));
+            player.sendSystemMessage(Component.literal("§b[Изменятор] §aСессия редактирования успешно завершена!"));
             return true;
         }
 
@@ -76,12 +83,12 @@ public class ModifyProcessor {
         Entity entity = ((ServerLevel) player.level()).getEntity(anomalyUuid);
 
         if (!(entity instanceof AnomalyEntity anomaly)) {
-            player.sendSystemMessage(Component.literal("§c[Изменятор] Ошибка! Выбранная аномалия больше не существует. Сессия закрыта."));
+            player.sendSystemMessage(Component.literal("§c[Изменятор] Ошибка! Выбранная аномалия больше не существует."));
             clearSession(tag);
             return true;
         }
 
-        // 🚀 Разбиваем входящую строку по разделителю ';' для пакетной обработки
+        // Разбор введенных параметров
         String[] instructions = trimmed.split(";");
         List<String> successApplied = new ArrayList<>();
         boolean hasErrors = false;
@@ -92,7 +99,7 @@ public class ModifyProcessor {
 
             String[] parts = singleCmd.split("\\s+");
             if (parts.length != 2) {
-                player.sendSystemMessage(Component.literal("§c[Изменятор] Ошибка формата в: '§f" + singleCmd + "§c'. Нужен формат: <параметр> <значение>"));
+                player.sendSystemMessage(Component.literal("§c[Изменятор] Ошибка формата в: '§f" + singleCmd + "§c'. Формат: <параметр> <значение>"));
                 hasErrors = true;
                 continue;
             }
@@ -115,12 +122,11 @@ public class ModifyProcessor {
                     successApplied.add("§e" + param + "§a=§f" + val);
                 }
             } catch (NumberFormatException e) {
-                player.sendSystemMessage(Component.literal("§c[Изменятор] Ошибка числа в: '§f" + singleCmd + "§c'"));
+                player.sendSystemMessage(Component.literal("§c[Изменятор] Неверное числовое значение в: '§f" + singleCmd + "§c'"));
                 hasErrors = true;
             }
         }
 
-        // Если хоты бы один параметр применился — обновляем аномалию
         if (!successApplied.isEmpty()) {
             anomaly.rebuildComponents();
             String appliedString = String.join("§7, ", successApplied);
@@ -128,10 +134,10 @@ public class ModifyProcessor {
         }
 
         if (!hasErrors) {
-            player.sendSystemMessage(Component.literal("§7(Сессия активна. Введите еще настройки или §fdone §7для выхода)"));
+            player.sendSystemMessage(Component.literal("§7(Сессия активна. Введите еще параметры или §fdone §7для выхода)"));
         }
 
-        return true; // Перехватываем сообщение из общего чата
+        return true;
     }
 
     public static void clearSession(CompoundTag tag) {
