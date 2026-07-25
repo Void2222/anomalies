@@ -1,5 +1,6 @@
 package net.void_.anomalies.item;
 
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
@@ -39,11 +40,16 @@ public class AnomalyMultitoolHandler {
             MultitoolMode mode = AnomalyMultitoolItem.getMode(mainHand);
             boolean isShift = player.isShiftKeyDown();
 
+            // Защита: если игрок был в режиме MODIFY и переключил режим, сбрасываем чатовую сессию
+            if (mode != MultitoolMode.MODIFY && mainHand.hasTag()) {
+                ModifyProcessor.clearSession(mainHand.getTag());
+            }
+
             switch (mode) {
                 case ANALYZE -> AnalyzeProcessor.process(player, anomaly);
                 case MODIFY -> ModifyProcessor.onInteract(player, mainHand, anomaly, isShift);
                 case RELOCATE -> RelocateProcessor.onInteract(player, mainHand, anomaly, isShift);
-                case DELETE -> DeleteProcessor.process(player, anomaly, isShift); // <-- Добавлен isShift
+                case DELETE -> DeleteProcessor.process(player, anomaly, isShift);
             }
         }
     }
@@ -60,7 +66,6 @@ public class AnomalyMultitoolHandler {
         if (event.getTarget() instanceof AnomalyEntity anomaly) {
             MultitoolMode mode = AnomalyMultitoolItem.getMode(mainHand);
             if (mode == MultitoolMode.DELETE) {
-                // Вызываем с передачей зажатого Shift
                 DeleteProcessor.process(player, anomaly, player.isShiftKeyDown());
                 event.setCanceled(true);
             }
