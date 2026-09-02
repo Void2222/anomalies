@@ -1,5 +1,6 @@
 package net.void_.anomalies.components;
 
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.common.MinecraftForge;
@@ -7,11 +8,13 @@ import net.void_.anomalies.api.event.AnomalyPhysicsEvent;
 import net.void_.anomalies.api.event.AnomalyZoneTransitionEvent;
 import net.void_.anomalies.anomaly.data.PhysicsConfig;
 import net.void_.anomalies.anomaly.data.ZoneConfig;
+import net.void_.anomalies.anomaly.util.ZoneUtils;
 import net.void_.anomalies.core.AnomalyEntity;
 import net.void_.anomalies.core.IAnomalyComponent;
 
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -25,8 +28,8 @@ public class ImpulseComponent implements IAnomalyComponent {
     private final PhysicsConfig generalPhysics;
     private final List<ZoneConfig> zones;
 
-    // Карта для отслеживания текущей зоны каждой сущности в этой конкретной аномалии
     private final Map<UUID, ZoneConfig> entityZones = new HashMap<>();
+    private int cleanupTimer = 0;
 
     public ImpulseComponent(double xMultiplier, double yMultiplier, double zMultiplier, boolean pullToCenter, PhysicsConfig generalPhysics, List<ZoneConfig> zones) {
         this.xMultiplier = xMultiplier;
@@ -44,54 +47,59 @@ public class ImpulseComponent implements IAnomalyComponent {
         }
     }
 
+    public List<ZoneConfig> getZones() {
+        return zones;
+    }
+
     @Override
-    public void serverTick(AnomalyEntity anomaly) {}
+    public void serverTick(AnomalyEntity anomaly) {
+        cleanupTimer++;
+        if (cleanupTimer >= 20) {
+            cleanupTimer = 0;
+            cleanupStaleEntities(anomaly);
+        }
+    }
+
     @Override
     public void clientTick(AnomalyEntity anomaly) {}
 
-    public ZoneConfig getActiveZone(AnomalyEntity anomaly, Entity target) {
-        if (target == null || !target.isAlive() || zones.isEmpty()) return null;
+    private void cleanupStaleEntities(AnomalyEntity anomaly) {
+        if (entityZones.isEmpty()) return;
+        if (!(anomaly.level() instanceof ServerLevel serverLevel)) return;
 
-        Vec3 anomalyPos = anomaly.position();
-        Vec3 targetPos = target.position();
-        double anomalyHeight = anomaly.getBbHeight();
+        Iterator<Map.Entry<UUID, ZoneConfig>> iterator = entityZones.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<UUID, ZoneConfig> entry = iterator.next();
+            UUID uuid = entry.getKey();
+            ZoneConfig previousZone = entry.getValue();
 
-        for (ZoneConfig zone : zones) {
-            boolean inZone = false;
+            Entity target = serverLevel.getEntity(uuid);
+            ZoneConfig currentZone = (target != null) ? ZoneUtils.getActiveZone(zones, anomaly, target) : null;
 
-            // Проверяем, задан ли цилиндрический режим (по умолчанию можно сделать цилиндр,
-            // если высота аномалии больше 1, или добавить поле shape в ZoneConfig)
-            // Допустим, проверяем по цилиндру (горизонтальное расстояние + вертикальный диапазон хитбокса аномалии):
-            double dx = targetPos.x - anomalyPos.x;
-            double dz = targetPos.z - anomalyPos.z;
-            double horizDistSq = dx * dx + dz * dz;
+            if (target == null || !target.isAlive() || target.level() != anomaly.level() || currentZone == null) {
+                iterator.remove();
 
-            if (horizDistSq <= zone.radius() * zone.radius()) {
-                // Проверка по высоте (находится ли сущность в пределах высоты аномалии от ее основания)
-                double minY = anomalyPos.y;
-                double maxY = anomalyPos.y + anomalyHeight;
-
-                // Даем небольшой запас по вертикали (например, в пределах всей высоты аномалии)
-                if (targetPos.y >= minY - 0.5 && targetPos.y <= maxY + 0.5) {
-                    inZone = true;
+                if (target != null && target.isAlive()) {
+                    AnomalyZoneTransitionEvent zoneEvent = new AnomalyZoneTransitionEvent(
+                            anomaly,
+                            target,
+                            anomaly.getAnomalyType(),
+                            previousZone,
+                            null
+                    );
+                    MinecraftForge.EVENT_BUS.post(zoneEvent);
                 }
             }
-
-            if (inZone) {
-                return zone;
-            }
         }
-        return null;
     }
 
     public boolean applyImpulse(AnomalyEntity anomaly, Entity target) {
         if (target == null || !target.isAlive()) return false;
 
         UUID targetUuid = target.getUUID();
-        ZoneConfig currentZone = getActiveZone(anomaly, target);
+        ZoneConfig currentZone = ZoneUtils.getActiveZone(zones, anomaly, target);
         ZoneConfig previousZone = entityZones.get(targetUuid);
 
-        // 🌟 Фиксируем смену зоны
         if (currentZone != previousZone) {
             AnomalyZoneTransitionEvent zoneEvent = new AnomalyZoneTransitionEvent(
                     anomaly,
@@ -120,7 +128,6 @@ public class ImpulseComponent implements IAnomalyComponent {
         double sForce = pConfig != null ? pConfig.spinForce() : 0.0;
         double impY = pConfig != null ? pConfig.impulseY() : yMultiplier;
 
-        // Рассчитываем планируемое изменение дельта-движения
         Vec3 calculatedMovement = target.getDeltaMovement();
 
         if (pullToCenter) {
@@ -145,18 +152,12 @@ public class ImpulseComponent implements IAnomalyComponent {
                         .add(0, impY, 0);
             }
 
-            // Защита от катапульты (лимит скорости)
             double maxSpeed = 1.0;
-            if (calculatedMovement.horizontalDistanceSqr() > maxSpeed * maxSpeed) {
-                calculatedMovement = calculatedMovement.normalize().scale(maxSpeed)
-                        .add(0, calculatedMovement.y - calculatedMovement.normalize().scale(maxSpeed).y, 0); // Сохраняем вертикаль
-                // Более чистый вариант ограничения горизонтали с сохранением вертикальной составляющей:
-                Vec3 horiz = new Vec3(calculatedMovement.x, 0, calculatedMovement.z);
-                if (horiz.lengthSqr() > maxSpeed * maxSpeed) {
-                    horiz = horiz.normalize().scale(maxSpeed);
-                }
-                calculatedMovement = new Vec3(horiz.x, calculatedMovement.y, horiz.z);
+            Vec3 horiz = new Vec3(calculatedMovement.x, 0, calculatedMovement.z);
+            if (horiz.lengthSqr() > maxSpeed * maxSpeed) {
+                horiz = horiz.normalize().scale(maxSpeed);
             }
+            calculatedMovement = new Vec3(horiz.x, calculatedMovement.y, horiz.z);
 
         } else {
             double iX = pConfig != null ? pConfig.impulseX() : xMultiplier;
@@ -165,7 +166,6 @@ public class ImpulseComponent implements IAnomalyComponent {
             calculatedMovement = calculatedMovement.add(iX, iY, iZ);
         }
 
-        // 🌟 Постим событие физики перед применением движения
         AnomalyPhysicsEvent physicsEvent = new AnomalyPhysicsEvent(
                 anomaly,
                 target,
@@ -175,10 +175,9 @@ public class ImpulseComponent implements IAnomalyComponent {
         );
 
         if (MinecraftForge.EVENT_BUS.post(physicsEvent)) {
-            return false; // Сторонний мод полностью отменил физику аномалии для этой сущности
+            return false;
         }
 
-        // Применяем финальный вектор (который сторонний мод мог изменить через сеттер)
         target.setDeltaMovement(physicsEvent.getDeltaMovement());
         target.hurtMarked = true;
         return true;

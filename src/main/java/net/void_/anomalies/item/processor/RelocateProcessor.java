@@ -28,6 +28,9 @@ public class RelocateProcessor {
     }
 
     public static void onLeftClickBlock(Player player, ItemStack stack, BlockPos pos) {
+        // Гарантируем, что метод не выполнится на клиенте
+        if (player.level().isClientSide) return;
+
         CompoundTag tag = stack.getTag();
         if (tag == null || tag.getBoolean("WaitingForOffset") || !tag.hasUUID("SelectedAnomaly")) return;
 

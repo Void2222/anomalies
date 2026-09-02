@@ -76,16 +76,18 @@ public class AnomalyMultitoolHandler {
     @SubscribeEvent
     public static void onLeftClickBlock(PlayerInteractEvent.LeftClickBlock event) {
         Player player = event.getEntity();
-        ItemStack mainHand = player.getMainHandItem();
+        ItemStack stack = player.getMainHandItem();
 
-        if (!isMultitool(mainHand)) return;
-        if (player.level().isClientSide) return;
-
-        MultitoolMode mode = AnomalyMultitoolItem.getMode(mainHand);
-        if (mode == MultitoolMode.RELOCATE) {
-            RelocateProcessor.onLeftClickBlock(player, mainHand, event.getPos());
-            if (mainHand.hasTag() && mainHand.getTag().hasUUID("SelectedAnomaly")) {
+        if (stack.getItem() instanceof AnomalyMultitoolItem) {
+            CompoundTag tag = stack.getTag();
+            if (tag != null && tag.hasUUID("SelectedAnomaly") && !tag.getBoolean("WaitingForOffset")) {
+                // Блокируем разрушение блока на клиенте и сервере
                 event.setCanceled(true);
+
+                // Логику переноса вызываем только на сервере
+                if (!player.level().isClientSide) {
+                    RelocateProcessor.onLeftClickBlock(player, stack, event.getPos());
+                }
             }
         }
     }

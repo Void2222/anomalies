@@ -75,15 +75,16 @@
 
 Модуль расчета и нанесения урона по сущностям.
 
+* **Жизненный цикл:** Инициализируется и регистрируется в `AnomalyEntity` **единожды** при сборке в `ZoneFactory`. Переиспользуется на всем протяжении жизни сущности (Zero-GC стратегия).
 * **Параметры:**
-* `damageRange`: диапазон случайных значений урона (`MinMaxRange`).
-* `customDamageSource`: тип урона Minecraft (`DamageSource`).
+* `defaultDamageRange`: базовый диапазон случайных значений урона (`MinMaxRange`).
+* `defaultDamageSource`: дефолтный тип урона Minecraft (`DamageSource`).
 
 
 * **Механика работы:**
-* `inflictDamage(...)`: вычисляет итоговый урон на основе диапазона или параметров активной зоны (`ZoneConfig`).
+* `inflictDamage(@Nullable AnomalyEntity anomaly, Entity target, @Nullable ZoneConfig zone, @Nullable MinMaxRange specificRange, @Nullable DamageSource overrideSource)`: универсальный метод нанесения урона. Принимает переопределенный диапазон или источник урона (например, из конфигурации активной зоны `ZoneConfig`).
 * Генерирует событие `AnomalyDamageEvent` на шине `MinecraftForge.EVENT_BUS`.
-* При отсутствии отмены события сторонними модами наносит итоговый урон через `target.hurt(customDamageSource, finalDamage)`.
+* При отсутствии отмены события сторонними модами наносит итоговый урон через `target.hurt(sourceToUse, finalDamage)`.
 
 
 
@@ -98,13 +99,14 @@
 * `pullToCenter`: флаг активации радиальной тяги к центру аномалии.
 * `generalPhysics`: дефолтная конфигурация физики.
 * `zones`: отсортированный по возрастанию радиуса список зон воздействия (`ZoneConfig`).
+* `entityZones`: карта `Map<UUID, ZoneConfig>` для отслеживания текущих зон сущностей и регистрации переходов.
+* `cleanupTimer`: счетчик тиков для сброса застрявших ссылок.
 
 
 * **Механика работы:**
-* `entityZones`: отслеживает UUID находящихся в зонах сущностей.
-* `getActiveZone(...)`: определяет текущую зону нахождения сущности (проверка по цилиндрическому объему с учетом высоты хитбокса аномалии).
-* При смене зоны генерирует событие `AnomalyZoneTransitionEvent`.
-* При расчете движения к центру (`pullToCenter`) вычисляет дифференциальный вектор с учетом расстояния, агрессивного вращения по нормали в центральной зоне (`spinForce`) и выталкивания по оси Y (`impulseY`).
+* **Защита от утечек памяти (Memory Leak Prevention):** В методе `serverTick()` раз в 20 тиков (1 секунда) вызывается метод `cleanupStaleEntities()`. Итератор проверяет карту `entityZones` и удаляет записи сущностей, которые погибли (`!isAlive()`), были удалены из мира, сменили измерение или покинули зону, с генерацией завершающего события `AnomalyZoneTransitionEvent`.
+* **Декуплинг геометрии зон:** Не содержит локальных математических вычислений объема зон; определение текущего слоя делегировано в утилиту `ZoneUtils.getActiveZone()`.
+* `applyImpulse(...)`: проверяет смену слоя (`currentZone != previousZone`) с генерацией события `AnomalyZoneTransitionEvent`. Вычисляет вектор движения `calculatedMovement` с учетом радиальной тяги, тангенциального вращения по нормали в центральной зоне (`spinForce`) и выталкивания по оси Y (`impulseY`).
 * Ограничивает горизонтальную скорость пределами (`maxSpeed = 1.0`), предотвращая эффект "катапультирования".
 * Публикует событие `AnomalyPhysicsEvent` перед изменением скорости и обновляет вектор перемещения через `target.setDeltaMovement()`.
 
@@ -177,34 +179,36 @@
 
 
 
----
-
 #### 1.9 `net.void_.anomalies.anomaly.ZoneFactory`
 
-Фабрика сущностей и центральный сборщик функциональных компонентов. Отвечает за инстанцирование `AnomalyEntity`, считывание NBT-переопределений (`customOverrides`) и внедрение компонентной архитектуры.
+Фабрика сущностей и декомпозированный сборщик функциональных компонентов. Отвечает за инстанцирование `AnomalyEntity`, последовательное наложение оверрайдов через `OverrideHelper` и регистрацию постоянных компонентов.
 
 * **Фабричное создание (`create`):**
 * `create(Level level, double x, double y, double z, String type)`: проверяет существование типа аномалии в `AnomalyReloadListener`. Инстанцирует `AnomalyEntity` через `EntityInit.ANOMALY.get().create(level)`, выставляет стартовые координаты $(x, y, z)$ и привязывает идентификатор типа `type.toLowerCase()`.
 
 
-* **Сборка компонентов (`applyComponents`):**
+* **Декларативный пайплайн сборки (`applyComponents`):**
 1. **Фиксация на сетке:** Автоматически добавляет `SnapToGridComponent`.
-2. **Приоритет оверрайдов:** Считывает `definition` из реестра датапака, после чего проверяет тег `customOverrides` сущности. Если в NBT присутствует локальное переопределение параметра, оно замещает значение из JSON.
-3. **Сборка размеров (`Size`):** Проверяет NBT-ключи `width` и `height` (или дефолтные `definition.size()`), применяя их через `setAnomalyDimensions()`.
-4. **Сборка системы частиц (`ParticleComponent`):** Проходит по массиву `definition.particles()`. Извлекает оверрайды `particleRadius`, `particleHeight`, `particleIntervalMin/Max`, `particleCountMin/Max`. Разрешает тип частицы в `BuiltInRegistries.PARTICLE_TYPE` (с дефолтом `FLAME`) и форму геометрической зоны (`Shape`).
-5. **Сборка аудио-системы (`SoundComponent`):** Применяет оверрайды громкости (`soundVolume`), тональности (`soundPitch`) и интервалов (`soundIntervalMin/Max`). Находит `SoundEvent` в `BuiltInRegistries.SOUND_EVENT` или создает переменный через `SoundEvent.createVariableRangeEvent()`.
-6. **Сборка физики, слоев зон и триггера (`TriggerComponent` & `ImpulseComponent`):**
-* **Динамические зоны из NBT:** Если NBT содержит ключ `zones_count`, фабрика генерирует список `List<ZoneConfig>` на основе динамических тегов `zone_i_radius`, `zone_i_damage`, `zone_i_pullForce`, `zone_i_spinForce`, `zone_i_impulseY`. Иначе берется список зон из JSON.
-* **Применение импульса:** Инициализирует `ImpulseComponent` с учетом флага притягивания `pullToCenter` и дефолтных векторов.
-* **Коллбэк триггерной обработки:** Конструирует лямбду `BiConsumer<AnomalyEntity, Entity>` для `TriggerComponent`:
-* Игнорирует другие аномалии при `ignoreOtherAnomalies == true`.
-* Вызывает `impulseComp.applyImpulse(anom, target)`.
-* Вычисляет активную зону `activeZone`.
-* Для `ItemEntity`: публикует `AnomalyItemInteractEvent`. При отмене события прекращает обработку.
-* Для остальных сущностей: публикует `AnomalyTriggerEvent`. При отмене прерывает выполнение.
-* Накладывает эффект поджога `target.setSecondsOnFire(dConfig.fireSeconds())`.
-* Расчитывает тип урона через `getDamageSource()` (`"fire"` $\rightarrow$ `inFire()`, `"lightning"` $\rightarrow$ `lightningBolt()`, `"magic"` $\rightarrow$ `magic()`, по умолчанию `generic()`) и наносит урон посредством временного `DamageComponent`.
+2. **Сборка размеров (`setupDimensions`):** Извлекает параметры габаритов из NBT или JSON через `OverrideHelper.getDimensions()` и применяет их в `setAnomalyDimensions()`.
+3. **Сборка системы частиц (`setupParticles`):** Проходит по массиву `particles()`. Запрашивает скорректированные диапазоны интервалов и количества через `OverrideHelper`, после чего регистрирует экземпляры `ParticleComponent`.
+4. **Сборка аудио-системы (`setupSound`):** Получает громкость, тональность и интервалы с учетом NBT-оверрайдов, подготавливает `SoundEvent` и добавляет `SoundComponent`.
+5. **Сборка триггеров, физики и урона (`setupTriggerAndPhysics`):**
+* **Подготовка зон:** Запрашивает отсортированный список `ZoneConfig` у `OverrideHelper.getZones()`.
+* **Постоянный компонент урона:** Единожды конструирует `DamageComponent` и регистрирует его в сущности (`anomaly.addComponent(damageComp)`).
+* **Постоянный компонент физики:** При наличии зон конструирует `ImpulseComponent` и регистрирует его в сущности (`anomaly.addComponent(impulseComp)`).
+* **Регистрация триггера:** Конструирует `TriggerComponent`, связывая его с вызовом приватного обработчика `handleTriggerTarget()`.
 
+
+
+
+* **Обработка целей триггера (`handleTriggerTarget`):**
+* Игнорирует другие аномалии при `ignoreOtherAnomalies == true`.
+* Вызывает `impulseComp.applyImpulse(anomaly, target)` при наличии физического модуля.
+* Независимо определяет активную зону через `ZoneUtils.getActiveZone(zones, anomaly, target)`.
+* Для `ItemEntity`: публикует `AnomalyItemInteractEvent`.
+* Для остальных сущностей: публикует `AnomalyTriggerEvent`, накладывает эффект поджога `target.setSecondsOnFire()` и наносит урон через ранее зарегистрированный `damageComp.inflictDamage()` без пересоздания объектов.
+
+---
 
 ### 2. Подсистема загрузки данных и конфигураций (`loader` + `data`)
 
@@ -223,20 +227,17 @@
 
 
 ---
-
 #### 2.2 DTO-модели конфигураций (`anomaly.data`)
 
-##### `AnomalyDefinition` (Record)
+##### `ZoneConfig` (Record)
 
-Корневая DTO-структура шаблона аномалии:
+Конфигурация изолированного слоя аномалии:
 
-* `size`: габариты сущности (`SizeConfig`).
-* `particles`: список конфигураций частиц (`List<ParticleConfig>`).
-* `sound`: звуковые параметры (`SoundConfig`).
-* `trigger`: конфигурация радиуса и интервала срабатывания (`TriggerConfig`).
-* `zones`: слои и радиусы воздействия от центра к периферии (`List<ZoneConfig>`).
-* `physics`: общие дефолтные импульсы физики (`PhysicsConfig`).
-* `ignoreOtherAnomalies`: флаг, запрещающий влияние логики триггера на другие сущности `AnomalyEntity`.
+* `radius`: радиус границы зоны.
+* `damage`: параметры урона (`DamageConfig`).
+* `physics`: специфичная физика зоны (`PhysicsConfig`).
+* **Геометрический расчет (`contains`):**
+* `contains(AnomalyEntity anomaly, Entity target)`: чистый математический метод проверки вхождения сущности в цилиндрический объем зоны с учетом радиуса и высоты хитбокса аномалии (высота Y в диапазоне от minY - 0.5 до maxY + 0.5). Не имеет побочных эффектов.
 
 ##### `MinMaxRange` & `MinMaxRange.Deserializer`
 
@@ -523,3 +524,28 @@
 
 * **Связка шины:** Метод `register(IEventBus)` подключает регистр сущностей к событийной шине загрузки мода.
 
+---
+
+### 6. Подсистема вспомогательных утилит (`anomaly.util`)
+
+#### 6.1 `net.void_.anomalies.anomaly.util.ZoneUtils`
+
+Утилитарный класс централизованного расчета активных зон.
+
+* **Назначение:** Полное разделение ответственности между физикой и уроном.
+
+
+* **Публичный интерфейс:**
+* `getActiveZone(List<ZoneConfig> zones, AnomalyEntity anomaly, Entity target)`: принимает список зон (отсортированный по возрастанию радиуса), аномалию и цель. Последовательно опрашивает `zone.contains(anomaly, target)` и возвращает наименьшую (внутреннюю) активную зону или `null`, если цель находится за пределами аномалии.
+
+---
+
+#### 6.2 `net.void_.anomalies.anomaly.util.OverrideHelper`
+
+Утилитарный класс-парсер NBT-переопределений (`customOverrides`).
+
+* **Назначение:** Изолирует низкоуровневую работу с NBT-тегами `CompoundTag`, обеспечивая приоритет данных: **NBT Override $\rightarrow$ DataPack JSON $\rightarrow$ Fallback Default**.
+* **Публичный интерфейс:**
+* `getDimensions(CompoundTag tag, SizeConfig defaultConfig)`: считывает ширину и высоту.
+* `getZones(CompoundTag tag, List<ZoneConfig> defaultZones)`: формирует список `ZoneConfig` при наличии в NBT ключа `zones_count` и динамических тегов `zone_i_*`.
+* `getParticleInterval()`, `getParticleCount()`, `getSoundInterval()`, `getTriggerInterval()`: безопасно извлекает диапазоны `MinMaxRange` с фаллбэком на базовые конфиги.

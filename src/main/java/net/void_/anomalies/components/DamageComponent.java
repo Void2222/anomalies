@@ -13,57 +13,51 @@ import javax.annotation.Nullable;
 
 public class DamageComponent implements IAnomalyComponent {
 
-    private final MinMaxRange damageRange;
-    private final DamageSource customDamageSource;
+    private final MinMaxRange defaultDamageRange;
+    private final DamageSource defaultDamageSource;
 
-    public DamageComponent(MinMaxRange damageRange, DamageSource customDamageSource) {
-        this.damageRange = damageRange;
-        this.customDamageSource = customDamageSource;
+    public DamageComponent(MinMaxRange defaultDamageRange, DamageSource defaultDamageSource) {
+        this.defaultDamageRange = defaultDamageRange;
+        this.defaultDamageSource = defaultDamageSource;
     }
 
     @Override
     public void serverTick(AnomalyEntity anomaly) {}
+
     @Override
     public void clientTick(AnomalyEntity anomaly) {}
 
     /**
-     * Базовый вызов нанесения урона
+     * Вызов нанесения урона по сущности с учетом конкретной зоны
      */
-    public void inflictDamage(Entity target) {
-        inflictDamage(null, target, null, damageRange);
-    }
-
-    /**
-     * Расширенный вызов с передачей аномалии и активной зоны
-     */
-    public void inflictDamage(@Nullable AnomalyEntity anomaly, Entity target, @Nullable ZoneConfig zone, @Nullable MinMaxRange specificRange) {
+    public void inflictDamage(@Nullable AnomalyEntity anomaly, Entity target, @Nullable ZoneConfig zone, @Nullable MinMaxRange specificRange, @Nullable DamageSource overrideSource) {
         if (target == null || !target.isAlive()) return;
 
-        MinMaxRange rangeToUse = (specificRange != null) ? specificRange : damageRange;
-        float calculatedDamage = (float) rangeToUse.getDouble();
+        MinMaxRange rangeToUse = (specificRange != null) ? specificRange : defaultDamageRange;
+        if (rangeToUse == null) return;
 
+        float calculatedDamage = (float) rangeToUse.getDouble();
+        if (calculatedDamage <= 0) return;
+
+        DamageSource sourceToUse = (overrideSource != null) ? overrideSource : defaultDamageSource;
         String anomalyType = (anomaly != null) ? anomaly.getAnomalyType() : "unknown";
 
-        // 🌟 Создаем и постим событие нанесения урона
         AnomalyDamageEvent damageEvent = new AnomalyDamageEvent(
                 anomaly,
                 target,
                 anomalyType,
                 zone,
-                customDamageSource,
+                sourceToUse,
                 calculatedDamage
         );
 
-        // Если сторонний мод (например, абсолютный щит) отменил событие — урон не наносится
         if (MinecraftForge.EVENT_BUS.post(damageEvent)) {
             return;
         }
 
-        // Берем итоговый урон (который сторонний мод мог урезать костюмом/бронёй)
         float finalDamage = damageEvent.getAmount();
-
         if (finalDamage > 0) {
-            target.hurt(customDamageSource, finalDamage);
+            target.hurt(sourceToUse, finalDamage);
         }
     }
 }
