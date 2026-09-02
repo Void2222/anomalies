@@ -52,11 +52,32 @@ public class ImpulseComponent implements IAnomalyComponent {
     public ZoneConfig getActiveZone(AnomalyEntity anomaly, Entity target) {
         if (target == null || !target.isAlive() || zones.isEmpty()) return null;
 
-        Vec3 anomalyPos = anomaly.position().add(0, anomaly.getBbHeight() / 2.0, 0);
-        double distance = anomalyPos.distanceTo(target.position());
+        Vec3 anomalyPos = anomaly.position();
+        Vec3 targetPos = target.position();
+        double anomalyHeight = anomaly.getBbHeight();
 
         for (ZoneConfig zone : zones) {
-            if (distance <= zone.radius()) {
+            boolean inZone = false;
+
+            // Проверяем, задан ли цилиндрический режим (по умолчанию можно сделать цилиндр,
+            // если высота аномалии больше 1, или добавить поле shape в ZoneConfig)
+            // Допустим, проверяем по цилиндру (горизонтальное расстояние + вертикальный диапазон хитбокса аномалии):
+            double dx = targetPos.x - anomalyPos.x;
+            double dz = targetPos.z - anomalyPos.z;
+            double horizDistSq = dx * dx + dz * dz;
+
+            if (horizDistSq <= zone.radius() * zone.radius()) {
+                // Проверка по высоте (находится ли сущность в пределах высоты аномалии от ее основания)
+                double minY = anomalyPos.y;
+                double maxY = anomalyPos.y + anomalyHeight;
+
+                // Даем небольшой запас по вертикали (например, в пределах всей высоты аномалии)
+                if (targetPos.y >= minY - 0.5 && targetPos.y <= maxY + 0.5) {
+                    inZone = true;
+                }
+            }
+
+            if (inZone) {
                 return zone;
             }
         }

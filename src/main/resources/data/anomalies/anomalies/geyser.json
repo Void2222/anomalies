@@ -1,0 +1,80 @@
+{
+  "size": {
+    "width": 1.5,
+    "height": 2.0
+  },
+  "particles": [
+    {
+      "type": "minecraft:cloud",
+      "shape": "CYLINDER",
+      "interval": [1, 3],
+      "radius": 1.2,
+      "height": 3.0,
+      "count": [4, 10]
+    },
+    {
+      "type": "minecraft:lava",
+      "shape": "DISC",
+      "interval": [15, 30],
+      "radius": 1.0,
+      "height": 0.5,
+      "count": [2, 5]
+    }
+  ],
+  "sound": {
+    "event": "minecraft:block.fire.extinguish",
+    "interval": [20, 35],
+    "source": "BLOCKS",
+    "volume": 1.0,
+    "pitch": 0.6
+  },
+  "trigger": {
+    "expandRadius": 4.5,
+    "interval": 3
+  },
+  "zones": [
+    {
+      "radius": 1.5,
+      "damage": {
+        "innerAmount": [2, 5],
+        "outerAmount": 1,
+        "fireSeconds": 3,
+        "damageType": "fire"
+      },
+      "physics": {
+        "impulseX": 0.0,
+        "impulseY": 1.4,
+        "impulseZ": 0.0,
+        "pullToCenter": false,
+        "pullForce": 0.0,
+        "spinForce": 0.1
+      }
+    },
+    {
+      "radius": 4.5,
+      "damage": {
+        "innerAmount": 0,
+        "outerAmount": 0,
+        "fireSeconds": 0,
+        "damageType": "generic"
+      },
+      "physics": {
+        "impulseX": 0.0,
+        "impulseY": 0.1,
+        "impulseZ": 0.0,
+        "pullToCenter": true,
+        "pullForce": 0.4,
+        "spinForce": 0.0
+      }
+    }
+  ],
+  "physics": {
+    "impulseX": 0.0,
+    "impulseY": 0.0,
+    "impulseZ": 0.0,
+    "pullToCenter": false,
+    "pullForce": 0.0,
+    "spinForce": 0.0
+  },
+  "ignoreOtherAnomalies": true
+}

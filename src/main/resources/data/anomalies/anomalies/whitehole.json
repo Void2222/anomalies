@@ -34,7 +34,7 @@
   },
   "zones": [
     {
-      "radius": 2.0,
+      "radius": 1.0,
       "damage": {
         "innerAmount": 50.0,
         "fireSeconds": 0,
