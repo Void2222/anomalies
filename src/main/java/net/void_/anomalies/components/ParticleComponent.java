@@ -21,8 +21,8 @@ public class ParticleComponent implements IAnomalyComponent {
     private int clientTickCounter = 0;
     private int nextTriggerTick;
 
-    // 🌟 Радиус отрисовки партиклов (в блоках). Если игрок дальше — аномалия "спит" на клиенте
-    private static final double RENDER_DISTANCE = 70.0D;
+    // 🌟 Предрассчитанный квадрат радиуса отрисовки (70.0^2 = 4900.0)
+    private static final double RENDER_DISTANCE_SQ = 4900.0D;
 
     public ParticleComponent(ParticleOptions particleType, MinMaxRange intervalRange, Shape shape, double radius, double height, MinMaxRange countRange) {
         this.particleType = particleType;
@@ -45,7 +45,7 @@ public class ParticleComponent implements IAnomalyComponent {
         Player localPlayer = Minecraft.getInstance().player;
         if (localPlayer != null) {
             double distanceSq = anomaly.distanceToSqr(localPlayer);
-            if (distanceSq > RENDER_DISTANCE * RENDER_DISTANCE) {
+            if (distanceSq > RENDER_DISTANCE_SQ) {
                 return; // Игрок далеко — не тратим ресурсы на спавн партиклов
             }
         }
@@ -57,46 +57,64 @@ public class ParticleComponent implements IAnomalyComponent {
 
             var pos = anomaly.position();
             var random = level.random;
-            int currentCount = countRange.getInt(); // Случайное количество частиц в этот раз
+            int currentCount = countRange.getInt(); // Случайное количество частиц
 
-            for (int i = 0; i < currentCount; i++) {
-                double x = pos.x;
-                double y = pos.y;
-                double z = pos.z;
-                double dx = 0.0D;
-                double dy = 0.02D;
-                double dz = 0.0D;
+            double posX = pos.x;
+            double posY = pos.y;
+            double posZ = pos.z;
 
-                switch (shape) {
-                    case SPHERE -> {
-                        double u = random.nextDouble();
-                        double v = random.nextDouble();
-                        double theta = u * 2.0 * Math.PI;
-                        double phi = Math.acos(2.0 * v - 1.0);
-                        double r = radius * Math.cbrt(random.nextDouble());
-                        x += r * Math.sin(phi) * Math.cos(theta);
-                        y += r * Math.sin(phi) * Math.sin(theta) + (height / 2);
-                        z += r * Math.cos(phi);
-                    }
-                    case CYLINDER -> {
-                        double angle = random.nextDouble() * 2.0 * Math.PI;
-                        double r = random.nextDouble() * radius;
-                        x += r * Math.cos(angle);
-                        y += random.nextDouble() * height;
-                        z += r * Math.sin(angle);
-                        dy = 0.05D;
-                    }
-                    case DISC -> {
-                        double angle = random.nextDouble() * 2.0 * Math.PI;
-                        double r = Math.sqrt(random.nextDouble()) * radius;
-                        x += r * Math.cos(angle);
-                        y += (random.nextDouble() - 0.5) * 0.1D;
-                        z += r * Math.sin(angle);
-                        dy = 0.01D;
+            // ⚡ LOOP UNSWITCHING: Выносим switch за пределы цикла
+            // Проверяем форму ровно 1 раз за тик вместо N раз
+            switch (shape) {
+                case SPHERE -> {
+                    // ⚡ REJECTION SAMPLING: Спавн в сфере без Math.sin, Math.cos, Math.acos и Math.cbrt
+                    for (int i = 0; i < currentCount; i++) {
+                        double rx, ry, rz;
+                        do {
+                            rx = random.nextDouble() * 2.0D - 1.0D;
+                            ry = random.nextDouble() * 2.0D - 1.0D;
+                            rz = random.nextDouble() * 2.0D - 1.0D;
+                        } while (rx * rx + ry * ry + rz * rz > 1.0D);
+
+                        double x = posX + rx * radius;
+                        double y = posY + ry * radius + (height * 0.5D);
+                        double z = posZ + rz * radius;
+
+                        level.addParticle(particleType, x, y, z, 0.0D, 0.02D, 0.0D);
                     }
                 }
+                case CYLINDER -> {
+                    // ⚡ REJECTION SAMPLING: Спавн в 2D-диске по осям XZ без тригонометрии
+                    for (int i = 0; i < currentCount; i++) {
+                        double rx, rz;
+                        do {
+                            rx = random.nextDouble() * 2.0D - 1.0D;
+                            rz = random.nextDouble() * 2.0D - 1.0D;
+                        } while (rx * rx + rz * rz > 1.0D);
 
-                level.addParticle(particleType, x, y, z, dx, dy, dz);
+                        double x = posX + rx * radius;
+                        double y = posY + random.nextDouble() * height;
+                        double z = posZ + rz * radius;
+
+                        level.addParticle(particleType, x, y, z, 0.0D, 0.05D, 0.0D);
+                    }
+                }
+                case DISC -> {
+                    // ⚡ REJECTION SAMPLING: Равномерный диск без Math.sqrt, sin и cos
+                    for (int i = 0; i < currentCount; i++) {
+                        double rx, rz;
+                        do {
+                            rx = random.nextDouble() * 2.0D - 1.0D;
+                            rz = random.nextDouble() * 2.0D - 1.0D;
+                        } while (rx * rx + rz * rz > 1.0D);
+
+                        double x = posX + rx * radius;
+                        double y = posY + (random.nextDouble() - 0.5D) * 0.1D;
+                        double z = posZ + rz * radius;
+
+                        level.addParticle(particleType, x, y, z, 0.0D, 0.01D, 0.0D);
+                    }
+                }
             }
         }
     }
