@@ -28,7 +28,7 @@
     {
       "radius": 0.8,
       "damage": {
-        "innerAmount": 1.0,
+        "innerAmount": 0.5,
         "fireSeconds": 0,
         "damageType": "lightning"
       }

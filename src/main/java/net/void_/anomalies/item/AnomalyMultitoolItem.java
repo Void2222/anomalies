@@ -38,31 +38,48 @@ public class AnomalyMultitoolItem extends Item {
     public InteractionResultHolder<ItemStack> use(Level level, Player player, InteractionHand hand) {
         ItemStack stack = player.getItemInHand(hand);
 
-        // Переключение режимов по Shift + ПКМ в воздух
-        if (player.isShiftKeyDown()) {
-            if (!level.isClientSide) {
-                MultitoolMode current = getMode(stack);
-                MultitoolMode next = current.next();
-                setMode(stack, next);
+        // Работаем только на сервере и только с главной рукой
+        if (!level.isClientSide && hand == InteractionHand.MAIN_HAND) {
+            CompoundTag tag = stack.getOrCreateTag();
 
-                // Очищаем старые временные данные при смене режима
-                CompoundTag tag = stack.getTag();
-                if (tag != null) {
-                    tag.remove("WaitingForParams");
+            // 1. Проверяем, находится ли мультитул в процессе интерактивного ввода
+            boolean isWaitingForOffset = tag.getBoolean("WaitingForOffset");
+            boolean isWaitingForParams = tag.getBoolean("WaitingForParams");
+
+            // 2. Если зажат Shift
+            if (player.isShiftKeyDown()) {
+
+                // Если игрок зажал Shift+ПКМ по воздуху ПОСЛЕ того, как выделил аномалию — отменяем выделение
+                if (isWaitingForOffset || isWaitingForParams) {
                     tag.remove("WaitingForOffset");
+                    tag.remove("WaitingForParams");
                     tag.remove("SelectedAnomaly");
+
+                    player.sendSystemMessage(Component.literal("§c[Мультитул] Выбор аномалии сброшен."));
+                    return InteractionResultHolder.success(stack);
                 }
 
+                // Если интерактивных режимов не было — переключаем режим мультитула по кругу
+                MultitoolMode currentMode = getMode(stack);
+                MultitoolMode nextMode = currentMode.next();
+                setMode(stack, nextMode);
+
+                // Очищаем сессионные NBT-теги при смене режима
+                tag.remove("WaitingForOffset");
+                tag.remove("WaitingForParams");
+                tag.remove("SelectedAnomaly");
+
+                // Сообщение в Action Bar
                 player.displayClientMessage(
-                        Component.literal("§b[Мультитул] Режим изменен на: ")
-                                .append(Component.literal(next.getName()).withStyle(next.getColor(), ChatFormatting.BOLD)),
+                        Component.literal("§lРежим: " + nextMode.getColor() + nextMode.getName()),
                         true
                 );
+
+                return InteractionResultHolder.success(stack);
             }
-            return InteractionResultHolder.sidedSuccess(stack, level.isClientSide());
         }
 
-        return super.use(level, player, hand);
+        return InteractionResultHolder.pass(stack);
     }
 
     @Override

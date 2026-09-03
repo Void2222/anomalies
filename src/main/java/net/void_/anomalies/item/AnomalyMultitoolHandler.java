@@ -2,6 +2,7 @@ package net.void_.anomalies.item;
 
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.event.ServerChatEvent;
@@ -26,31 +27,18 @@ public class AnomalyMultitoolHandler {
     // 1. Взаимодействие с аномалией (ПКМ)
     @SubscribeEvent
     public static void onEntityInteract(PlayerInteractEvent.EntityInteract event) {
-        if (event.getHand() != InteractionHand.MAIN_HAND) return;
+        ItemStack stack = event.getItemStack();
 
-        Player player = event.getEntity();
-        ItemStack mainHand = player.getMainHandItem();
-
-        if (!isMultitool(mainHand)) return;
-        if (player.level().isClientSide) return;
-
-        if (event.getTarget() instanceof AnomalyEntity anomaly) {
+        if (isMultitool(stack)) {
+            // Отменяем стандартную обработку клика ПКМ, чтобы игра не вызывала use() сразу после этого
             event.setCanceled(true);
+            event.setCancellationResult(InteractionResult.SUCCESS);
 
-            MultitoolMode mode = AnomalyMultitoolItem.getMode(mainHand);
-            boolean isShift = player.isShiftKeyDown();
+            Player player = event.getEntity();
+            if (player.level().isClientSide) return; // Выполняем логику только на сервере!
 
-            // Защита: если игрок был в режиме MODIFY и переключил режим, сбрасываем чатовую сессию
-            if (mode != MultitoolMode.MODIFY && mainHand.hasTag()) {
-                ModifyProcessor.clearSession(mainHand.getTag());
-            }
-
-            switch (mode) {
-                case ANALYZE -> AnalyzeProcessor.process(player, anomaly);
-                case MODIFY -> ModifyProcessor.onInteract(player, mainHand, anomaly, isShift);
-                case RELOCATE -> RelocateProcessor.onInteract(player, mainHand, anomaly, isShift);
-                case DELETE -> DeleteProcessor.process(player, anomaly, isShift);
-            }
+            // Передаем управление в процессор
+            RelocateProcessor.onInteract(player, stack, (AnomalyEntity) event.getTarget(), player.isShiftKeyDown());
         }
     }
 

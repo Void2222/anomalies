@@ -1,552 +1,556 @@
-### 0. Главная точка входа и инициализация (`Anomalies.java`)
+# Anomalies Mod — Архитектура и Структура Проекта
 
-#### 0.1 `net.void_.anomalies.Anomalies`
-
-Главный класс модификации, аннотированный `@Mod(Anomalies.MOD_ID)`, выполняющий роль центральной точки входа (Entrypoint) и связывающий подсистемы мода с шинами событий Forge (`FMLJavaModLoadingContext` и `MinecraftForge.EVENT_BUS`).
-
-* **Идентификация и логирование:**
-* `MOD_ID`: глобальный строковый идентификатор модификации (`"anomalies"`).
-* `LOGGER`: экземпляр SLF4J-логгера для вывода диагностческих сообщений в консоль сервера/клиента.
-
-
-* **Регистрация предметов (`ITEMS`):**
-* Использует `DeferredRegister<Item>` для безопасной регистрации предметов Forge.
-* `ANOMALY_MULTITOOL`: регистрирует предмет мультитула администратора (`AnomalyMultitoolItem`) с лимитом в 1 штуку в стаке (`stacksTo(1)`).
-
-
-* **Жизненный цикл и инициализация шин:**
-* Получает шину событий мода `modEventBus` через `FMLJavaModLoadingContext`.
-* Привязывает реестр предметов `ITEMS` и реестр сущностей `EntityInit` к `modEventBus`.
-* Подписывает класс на глобальную шину событий `MinecraftForge.EVENT_BUS`.
-
-
-* **Обработчики событий (`@SubscribeEvent`):**
-* `onAddReloadListeners(AddReloadListenerEvent event)`: регистрирует `AnomalyReloadListener` в менеджере ресурсов Minecraft, обеспечивая загрузку и горячую перезагрузку JSON-конфигураций аномалий из датапаков.
-* `onRegisterCommands(RegisterCommandsEvent event)`: регистрирует внутриигровые команды `/anomaly` в Brigadier через `AnomalyCommands.register()`.
-* `commonSetup(FMLCommonSetupEvent event)`: эталонный метод первичной инициализации общего цикла загрузки FML.
-
-### 1. Подсистема базовой сущности и компонентов (`core` + `components` + `anomaly`)
-
-#### 1.1 `net.void_.anomalies.core.AnomalyEntity`
-
-Основной класс сущности аномалии, наследующийся от `net.minecraft.world.entity.Entity`.
-
-* **Физические свойства и флаги:**
-* `noPhysics = true`: сущность игнорирует встроенный коллизионный движок Minecraft (прохождение сквозь блоки, отсутствие тяжести).
-* `isPickable() = true`: сущность доступна для клика/выбора (интерполяция курсором, взаимодействие мультитулом).
-* `isInvulnerable() = true`: сущность неуязвима к стандартному урону ванильного мира.
-* `canBeCollidedWith() = false`: сущность не блокирует перемещение других сущностей.
-
-
-* **Синхронизация данных (DataWatcher / SynchedEntityData):**
-* `ANOMALY_TYPE`: переменная типа `String`, синхронизируемая между сервером и клиентом. При изменении вызывает метод `rebuildComponents()`.
-
-
-* **Хранение состояния и NBT-оверрайды:**
-* `customOverrides`: объект `CompoundTag` для индивидуальной переопределяющей настройки параметров (радиус, урон, интервалы) конкретного экземпляра сущности в обход дефолтов из JSON.
-* `setOverrideDouble(String key, double value)`: записывает локальное значение в NBT и инициализирует пересборку жизненного цикла сущности.
-* `addAdditionalSaveData()` / `readAdditionalSaveData()`: сохранение/загрузка `AnomalyType` и NBT-тегов `CustomOverrides` в мир.
-
-
-* **Динамические габариты:**
-* `anomalyWidth`, `anomalyHeight`: определяющие параметры хитбокса, пересчитываемые через `getDimensions(Pose pose)` с вызовом `refreshDimensions()`.
-
-
-* **Управление жизненным циклом и жизненным циклом компонентов:**
-* `components`: список объектов `IAnomalyComponent`.
-* `tick()`: разделяет логику на `clientTick()` и `serverTick()`, опрашивая все подключенные компоненты.
-* `rebuildComponents()`: очищает `components` и инициирует повторное построение через `ZoneFactory.applyComponents()`.
-
-
+> **Назначение документа:** Полная спецификация архитектуры, структуры пакетов, моделей данных и жизненного цикла движка аномалий для разработчиков и создателей аддонов.
+> **Целевая платформа:** `Minecraft Forge / Java 17+`
 
 ---
 
-#### 1.2 `net.void_.anomalies.core.IAnomalyComponent`
+## 📐 Архитектурные Принципы и Стандарты
 
-Базовый контракт для всех функциональных модулей сущности.
-
-* `serverTick(AnomalyEntity anomaly)`: вызывается каждый серверный тик.
-* `clientTick(AnomalyEntity anomaly)`: вызывается каждый клиентский тик.
-* `save(CompoundTag tag)` / `load(CompoundTag tag)`: методы сохранения и загрузки состояния компонента в NBT.
-
----
-
-#### 1.3 `net.void_.anomalies.components.DamageComponent`
-
-Модуль расчета и нанесения урона по сущностям.
-
-* **Жизненный цикл:** Инициализируется и регистрируется в `AnomalyEntity` **единожды** при сборке в `ZoneFactory`. Переиспользуется на всем протяжении жизни сущности (Zero-GC стратегия).
-* **Параметры:**
-* `defaultDamageRange`: базовый диапазон случайных значений урона (`MinMaxRange`).
-* `defaultDamageSource`: дефолтный тип урона Minecraft (`DamageSource`).
-
-
-* **Механика работы:**
-* `inflictDamage(@Nullable AnomalyEntity anomaly, Entity target, @Nullable ZoneConfig zone, @Nullable MinMaxRange specificRange, @Nullable DamageSource overrideSource)`: универсальный метод нанесения урона. Принимает переопределенный диапазон или источник урона (например, из конфигурации активной зоны `ZoneConfig`).
-* Генерирует событие `AnomalyDamageEvent` на шине `MinecraftForge.EVENT_BUS`.
-* При отсутствии отмены события сторонними модами наносит итоговый урон через `target.hurt(sourceToUse, finalDamage)`.
-
-
+1. **Composition Over Inheritance:** Сущность `AnomalyEntity` является легким runtime-контейнером. Вся прикладная логика (физика, визуализация, нанесение урона, триггеры) вынесена в независимые компоненты (`IAnomalyComponent`).
+2. **Data-Driven & Overrides:** Конфигурация аномалии определяется базовым шаблоном в JSON (`AnomalyDefinition`), но может быть переопределена для конкретной сущности в мире через NBT (`customOverrides`). Приоритет NBT всегда выше шаблона.
+3. **Server Authority & Client Presentation:** Игровая логика, расчет зон, наложение эффектов и фильтрация целей происходят строго на сервере. Клиентская часть отвечает за рендеринг, частицы (`ParticleComponent`) и пространственный звук (`SoundComponent`).
+4. **Единый Стандарт Описания Классов:**
+* **Назначение:** Четкая зона ответственности.
+* **Технические детали:** Константы, NBT-ключи, события, тикеры, формулы.
+* **Связи:** Взаимодействие с другими компонентами, событиями и реестрами.
 
 ---
 
-#### 1.4 `net.void_.anomalies.components.ImpulseComponent`
+## 🗺 Дерево Пакетов
 
-Модуль физики, гравитационного притяжения, вращения и позонного перемещения сущностей.
+```text
+net.void_.anomalies
+├── api/          # Публичный Extension API (Forge Events)
+│   └── event/    # Перехватываемые события триггеров, урона, физики и зон
+├── anomaly/      # Data-driven слой, фабрика сборки и загрузчик JSON
+│   ├── data/     # Immutable Record-классы конфигурации
+│   ├── loader/   # Datapack Reload Listeners
+│   └── util/     # Математические утилиты расчета зон и оверрайдов
+├── client/       # Клиентская часть (Рендереры, клиентские эвенты)
+├── components/   # Реализации компонентов поведения (ECS)
+├── core/         # Ядро движка (Entity, Component Interface)
+├── item/         # Мультитул и процессоры управления (Strategy Pattern)
+│   └── processor/# Процессоры режимов (Analyze, Modify, Relocate, Delete)
+└── setup/        # Инициализация, регистрация сущностей и команды
 
-* **Параметры:**
-* `xMultiplier`, `yMultiplier`, `zMultiplier`: базовые векторы линейного импульса.
-* `pullToCenter`: флаг активации радиальной тяги к центру аномалии.
-* `generalPhysics`: дефолтная конфигурация физики.
-* `zones`: отсортированный по возрастанию радиуса список зон воздействия (`ZoneConfig`).
-* `entityZones`: карта `Map<UUID, ZoneConfig>` для отслеживания текущих зон сущностей и регистрации переходов.
-* `cleanupTimer`: счетчик тиков для сброса застрявших ссылок.
-
-
-* **Механика работы:**
-* **Защита от утечек памяти (Memory Leak Prevention):** В методе `serverTick()` раз в 20 тиков (1 секунда) вызывается `cleanupStaleEntities()`. Итератор проверяет карту `entityZones` и удаляет записи сущностей, которые погибли (`!isAlive()`), были удалены из мира, сменили измерение или покинули зону, с генерацией завершающего события `AnomalyZoneTransitionEvent`.
-* **Оптимизация вычислений (Zero-GC стратегия):** Вся векторная математика притягивания и тангенциального вращения (`spinForce`) вычисляется на примитивных типах `double` (`moveX`, `moveY`, `moveZ`). Единственный объект `Vec3` конструируется строго перед вызовом события `AnomalyPhysicsEvent`.
-* **Минимизация квадратных корней:** Вычисление радиальной силы притяжения использует единичный обратный множитель `1.0 / Math.sqrt(distSq)`, сокращая количество вызовов `Math.sqrt()` до одного на весь расчет физического тика.
-* **Перегрузка с предрассчитанной зоной:** Метод `applyImpulse(anomaly, target, precalculatedZone)` принимает готовую ссылку на `ZoneConfig`, если она была определена ранее (например, в `ZoneFactory`), что устраняет повторные вызовы итератора зон через `ZoneUtils.getActiveZone()`.
-* **Переходы и ограничения:** Фиксирует смену слоев (`currentZone != previousZone`) с генерацией отменяемого события `AnomalyZoneTransitionEvent`. Ограничивает предельную горизонтальную скорость (до `1.0` блока/тик) и применяет итоговый вектор через `target.setDeltaMovement()`.
-
-
+```
 
 ---
 
+## 🔄 Жизненный Цикл и Схема Данных
 
+```text
+       ┌────────────────────────┐
+       │     JSON Datapack      │
+       └───────────┬────────────┘
+                   │
+                   ▼
+       ┌────────────────────────┐         ┌────────────────────────┐
+       │ AnomalyReloadListener  │         │   Item / Entity NBT    │
+       └───────────┬────────────┘         │   (customOverrides)    │
+                   │                      └───────────┬────────────┘
+                   ▼                                  │
+         ┌───────────────────┐                        │
+         │ AnomalyDefinition │                        │
+         └─────────┬─────────┘                        │
+                   │                                  │
+                   └────────────────┬─────────────────┘
+                                    │
+                                    ▼
+                         ┌────────────────────┐
+                         │    ZoneFactory     │ (Composition Root)
+                         └──────────┬─────────┘
+                                    │
+                                    ▼
+                         ┌────────────────────┐
+                         │   AnomalyEntity    │ (Runtime Container)
+                         └──────────┬─────────┘
+                                    │
+          ┌─────────────────────────┼─────────────────────────┐
+          ▼                         ▼                         ▼
+  ┌───────────────┐         ┌───────────────┐         ┌───────────────┐
+  │   Server      │         │    Client     │         │ Forge Events  │
+  │  Components   │         │  Components   │         │   (Public)    │
+  └───────────────┘         └───────────────┘         └───────────────┘
 
-#### 1.5 `net.void_.anomalies.components.ParticleComponent`
-
-Модуль генерации визуальных эффектов на клиентской стороне.
-
-* **Параметры:**
-* `particleType`: тип частицы (`ParticleOptions`).
-* `intervalRange`: интервал между спавнами в тиках.
-* `shape`: геометрическая форма зоны спавна (`SPHERE`, `CYLINDER`, `DISC`).
-* `radius`, `height`: геометрические параметры зоны.
-* `countRange`: количество спавнимых частиц за 1 итерацию.
-
-
-* **Механика работы:**
-* **LOD-оптимизация:** В `clientTick()` проверяет квадрат расстояния до локального игрока (`Minecraft.getInstance().player`). Если дистанция превышает предрассчитанную константу `RENDER_DISTANCE_SQ` (`4900.0` блоков² / 70 блоков), спавн полностью отменяется без лишней математики.
-* **Оптимизация ветвления (Loop Unswitching):** Проверка формы `switch (shape)` вынесена за пределы итерационного цикла спавна `for`. Выбор формы происходит ровно 1 раз за тик, а не $N$ раз на каждую частицу.
-* **Алгоритм Rejection Sampling (Zero-Trigonometry):** Генерация координат для форм `SPHERE`, `CYLINDER` и `DISC` переведена со сложной тригонометрии (`Math.sin`, `Math.cos`, `Math.acos`, `Math.cbrt`, `Math.sqrt`) на случайную выборку точек внутри единичного объема с отсечением внешних углов (`rx*rx + ry*ry + rz*rz > 1.0`). Это обеспечивает быстрое и равномерное геометрическое распределение частиц.
-
----
-
-#### 1.6 `net.void_.anomalies.components.SnapToGridComponent`
-
-Модуль позиционирования сущности в пространстве.
-
-* **Механика работы:**
-* При первом вызове `serverTick()` центрирует координаты аномалии по сетке блоков: $X = \lfloor X \rfloor + 0.5$, $Y = \lfloor Y \rfloor$, $Z = \lfloor Z \rfloor + 0.5$.
-* После однократного срабатывания выставляет флаг `isSnapped = true` и прекращает вычисления.
-
-
-
----
-
-#### 1.7 `net.void_.anomalies.components.SoundComponent`
-
-Модуль воспроизведения аудиоэффектов и эмбиент-звуков.
-
-* **Параметры:**
-* `soundEvent`: проигрываемый звук (`SoundEvent`).
-* `intervalRange`: интервал между повторами.
-* `soundSource`: звуковой канал (`SoundSource`).
-* `volume`, `pitch`: громкость и тональность.
-
-
-* **Механика работы:**
-* В клиентском тике отсчитывает интервал времени и при достижении таймера воспроизводит звук через `level.playLocalSound()` с последующей генерацией нового случайного интервала.
+```
 
 ---
 
-#### 1.8 `net.void_.anomalies.components.TriggerComponent`
+## 1. Ядро Движка (`core`)
 
-Модуль обнаружения целевых сущностей и инициации триггерной логики.
+*Пакет:* `net.void_.anomalies.core`
 
-* **Параметры:**
-* `expandRadius`: радиус расширения AABB-области детекции.
-* `interval`: интервал проверки.
-* `onTrigger`: функция обратного вызова (`BiConsumer<AnomalyEntity, Entity>`), выполняющая целевое действие.
+### 1.1. Runtime-Контейнер Сущности (`core.AnomalyEntity`)
 
+* **Класс:** `AnomalyEntity` (расширяет `net.minecraft.world.entity.Entity`)
+* **Назначение:** Базовая сущность аномалии в мире. Выступает точкой привязки в пространстве, контейнером для компонентов `IAnomalyComponent` и хранителем состояния оверрайдов.
+* **Технические детали:**
+* **Свойства в конструкторе:** `noPhysics = true`.
+* **Флаги переопределения:** `isPickable() = true`, `isInvulnerable() = true`, `canBeCollidedWith() = false`.
+* **Синхронизация:** `ANOMALY_TYPE` (`SynchedEntityData.defineId(AnomalyEntity.class, EntityDataSerializers.STRING)`). При вызове `onSyncedDataUpdated()` на клиенте авто-вызывается `rebuildComponents()`.
+* **Размеры сущности:** По умолчанию `1.0F x 1.0F`. Метод `setAnomalyDimensions(width, height)` вызивает `refreshDimensions()`. Динамический хитбокс возвращается через `getDimensions(Pose pose) -> EntityDimensions.scalable(width, height)`.
+* **Структура NBT в сохранении мира:**
+* `"AnomalyType"` (`String`) — идентификатор шаблона аномалии.
+* `"CustomOverrides"` (`CompoundTag`) — NBT-тег локальных переопределений параметров.
 
-* **Механика работы:**
-* **LOD-оптимизация:** опрашивает сервер на наличие игроков в радиусе `48.0` блоков (`ACTIVATION_DISTANCE`). Если игроков нет, проверка отменяется.
-* По истечении таймера строит расширенную область `AABB` вокруг хитбокса аномалии.
-* Запрашивает у мира список сущностей типов `LivingEntity` и `ItemEntity`, передавая найденные объекты в коллбэк `onTrigger`.
+* **Управление NBT-оверрайдами:**
+* `getCustomOverrides()` / `setCustomOverrides(CompoundTag tag)` — возвращает или полностью подменяет тег с вызовом `rebuildComponents()`.
+* `setOverrideDouble(String key, double value)` — записывает значение и сразу пересобирает компоненты.
 
+* **Исполнение тика (`tick()`):**
+* На клиенте (`level().isClientSide`): итеративно вызывает `component.clientTick(this)`.
+* На сервере: итеративно вызывает `component.serverTick(this)`.
 
+* **Пересборка (`rebuildComponents()`):** Очищает `components.clear()` и, если `getAnomalyType()` не пуст, вызывает `ZoneFactory.applyComponents(this, type)`.
+* **Спавн-пакет:** `getAddEntityPacket()` возвращает `NetworkHooks.getEntitySpawningPacket(this)`.
 
-#### 1.9 `net.void_.anomalies.anomaly.ZoneFactory`
-
-Фабрика сущностей и декомпозированный сборщик функциональных компонентов. Отвечает за инстанцирование `AnomalyEntity`, последовательное наложение оверрайдов через `OverrideHelper` и регистрацию постоянных компонентов.
-
-* **Фабричное создание (`create`):**
-* `create(Level level, double x, double y, double z, String type)`: проверяет существование типа аномалии в `AnomalyReloadListener`. Инстанцирует `AnomalyEntity` через `EntityInit.ANOMALY.get().create(level)`, выставляет стартовые координаты $(x, y, z)$ и привязывает идентификатор типа `type.toLowerCase()`.
-
-
-* **Декларативный пайплайн сборки (`applyComponents`):**
-1. **Фиксация на сетке:** Автоматически добавляет `SnapToGridComponent`.
-2. **Сборка размеров (`setupDimensions`):** Извлекает параметры габаритов из NBT или JSON через `OverrideHelper.getDimensions()` и применяет их в `setAnomalyDimensions()`.
-3. **Сборка системы частиц (`setupParticles`):** Проходит по массиву `particles()`. Запрашивает скорректированные диапазоны интервалов и количества через `OverrideHelper`, после чего регистрирует экземпляры `ParticleComponent`.
-4. **Сборка аудио-системы (`setupSound`):** Получает громкость, тональность и интервалы с учетом NBT-оверрайдов, подготавливает `SoundEvent` и добавляет `SoundComponent`.
-5. **Сборка триггеров, физики и урона (`setupTriggerAndPhysics`):**
-* **Подготовка зон:** Запрашивает отсортированный список `ZoneConfig` у `OverrideHelper.getZones()`.
-* **Постоянный компонент урона:** Единожды конструирует `DamageComponent` и регистрирует его в сущности (`anomaly.addComponent(damageComp)`).
-* **Постоянный компонент физики:** При наличии зон конструирует `ImpulseComponent` и регистрирует его в сущности (`anomaly.addComponent(impulseComp)`).
-* **Регистрация триггера:** Конструирует `TriggerComponent`, связывая его с вызовом приватного обработчика `handleTriggerTarget()`.
-
-
-
-
-* **Обработка целей триггера (`handleTriggerTarget`):**
-* Игнорирует другие аномалии при `ignoreOtherAnomalies == true`.
-* Вызывает `impulseComp.applyImpulse(anomaly, target)` при наличии физического модуля.
-* Независимо определяет активную зону через `ZoneUtils.getActiveZone(zones, anomaly, target)`.
-* Для `ItemEntity`: публикует `AnomalyItemInteractEvent`.
-* Для остальных сущностей: публикует `AnomalyTriggerEvent`, накладывает эффект поджога `target.setSecondsOnFire()` и наносит урон через ранее зарегистрированный `damageComp.inflictDamage()` без пересоздания объектов.
+* **Связи:** `ZoneFactory`, `IAnomalyComponent`, `CompoundTag`, `NetworkHooks`, `SynchedEntityData`.
 
 ---
 
-### 2. Подсистема загрузки данных и конфигураций (`loader` + `data`)
+### 1.2. Контракт Компонента (`core.IAnomalyComponent`)
 
-#### 2.1 `net.void_.anomalies.anomaly.loader.AnomalyReloadListener`
+* **Интерфейс:** `IAnomalyComponent`
+* **Назначение:** Единый контракт поведения аномалии.
+* **Технические детали:**
+* `default void serverTick(AnomalyEntity anomaly)` — вызывается каждый тик на сервере (триггеры, физика, очистка).
+* `default void clientTick(AnomalyEntity anomaly)` — вызывается каждый тик на клиенте (частицы, аудио).
+* `default void save(CompoundTag tag)` / `default void load(CompoundTag tag)` — интерфейсные методы сериализации состояния.
 
-Менеджер ресурсов датапаков, наследуемый от `SimpleJsonResourceReloadListener`.
-
-* **Назначение:** Сканирует JSON-файлы аномалий в каталоге `data/<mod>/anomalies/`, сериализует их в Java-объекты и сохраняет в глобальном реестре.
-* **Экземпляр GSON:** Содержит кастомный адаптер типов для `MinMaxRange`, поддерживающий как одиночные значения, так и массивы диапазонов. Настроен в `lenient` режиме.
-* **Глобальный реестр (`REGISTRY`):** Карта вида `Map<String, AnomalyDefinition>`, в которой ключом является чистый путь файла (`location.getPath().toLowerCase()`), например, `"zharka"`.
-* **Публичный интерфейс:**
-* `get(String type)`: возвращает дефиницию аномалии по строковому идентификатору.
-* `getKeys()`: возвращает множество всех зарегистрированных ID аномалий.
-* `exists(String type)`: проверяет наличие аномалии в реестре.
-
-
-
----
-#### 2.2 DTO-модели конфигураций (`anomaly.data`)
-
-##### `ZoneConfig` (Record)
-
-Конфигурация изолированного слоя аномалии:
-
-* `radius`: радиус границы зоны.
-* `damage`: параметры урона (`DamageConfig`).
-* `physics`: специфичная физика зоны (`PhysicsConfig`).
-* **Геометрический расчет (`contains`):**
-* `contains(AnomalyEntity anomaly, Entity target)`: чистый математический метод проверки вхождения сущности в цилиндрический объем зоны с учетом радиуса и высоты хитбокса аномалии (высота Y в диапазоне от minY - 0.5 до maxY + 0.5). Не имеет побочных эффектов.
-
-##### `MinMaxRange` & `MinMaxRange.Deserializer`
-
-Класс гибридного типа данных (фиксированное число или случайный диапазон).
-
-* **Генерация значений:**
-* `getInt()`: генерирует случайное целое число $N \in [\text{min}, \text{max}]$.
-* `getDouble()`: генерирует случайное вещественное число $D \in [\text{min}, \text{max})$.
-
-
-* **Десериализация (GSON):**
-* Числовой примитив (`"interval": 40`) парсится как диапазоны со строгим совпадением (`min = max = 40`).
-* Массив из двух чисел (`"interval": [30, 60]`) парсится как интервал `min = 30`, `max = 60`.
-
-
-
-##### `ZoneConfig` (Record)
-
-Конфигурация изолированного слоя аномалии:
-
-* `radius`: радиус границы зоны.
-* `damage`: параметры урона (`DamageConfig`).
-* `physics`: специфичная физика зоны (`PhysicsConfig`).
-
-##### `DamageConfig` (Record)
-
-Конфигурация наносимого урона:
-
-* `outerAmount` / `innerAmount`: диапазоны урона на границе и в центре зоны (`MinMaxRange`).
-* `fireSeconds`: длительность поджога цели в секундах.
-* `damageType`: имя типа урона (`"fire"`, `"lightning"`, `"magic"`, `"generic"`).
-* **Совместимость:** Дополнительный конструктор принимает единичный `amount` для поддержки старого формата JSON.
-
-##### `PhysicsConfig` (Record)
-
-Векторная конфигурация сил:
-
-* `impulseX`, `impulseY`, `impulseZ`: силы импульса по координатным осям.
-* `pullToCenter`: флаг активации вектора притягивания к центру.
-* `pullForce`: базовое значение силы притяжения.
-* `spinForce`: тангенциальная сила вращения во внутреннем слое.
-
-##### `ParticleConfig` (Record)
-
-Конфигурация системы частиц:
-
-* `type`: строковый идентификатор партикла (например, `"minecraft:flame"`).
-* `shape`: геометрическая форма зоны (`"SPHERE"`, `"CYLINDER"`, `"DISC"`).
-* `interval`: диапазон задержки между генерациями (`MinMaxRange`).
-* `radius`, `height`: размеры геометрического объема.
-* `count`: диапазон количества спавнимых частиц (`MinMaxRange`).
-* **Конвертер `toComponent()`:** Регистрирует партикл через `BuiltInRegistries.PARTICLE_TYPE` и собирает экземпляр `ParticleComponent`.
-
-##### `SoundConfig` (Record)
-
-Аудио-конфигурация:
-
-* `event`: путь к ресурсу звука (например, `"minecraft:entity.lightning_bolt.thunder"`).
-* `interval`: интервал между воспроизведениями (`MinMaxRange`).
-* `source`: звуковая категория (`SoundSource`).
-* `volume`, `pitch`: громкость и тональность.
-* **Конвертер `toComponent()`:** Находит звук в реестре `BuiltInRegistries.SOUND_EVENT` или динамически создает через `SoundEvent.createVariableRangeEvent(loc)`.
-
-##### `TriggerConfig` (Record)
-
-Конфигурация области захвата:
-
-* `expandRadius`: дополнительное расширение AABB-хитбокса.
-* `interval`: диапазон частоты проверки области в тиках (`MinMaxRange`).
-
-##### `SizeConfig` (Record)
-
-Конфигурация размера сущности:
-
-* `width`, `height`: ширина и высота хитбокса аномалии.
-
-### 3. Подсистема событийно-ориентированного API (`api.event`)
-
-Все события подсистемы наследуются от `net.minecraftforge.eventbus.api.Event` и публикуются на шине `MinecraftForge.EVENT_BUS`. Аннотация `@Cancelable` позволяет сторонним модам полностью прерывать стандартное поведение аномалии (например, при наличии защитных костюмов, артефактов или внешних силовых полей).
+* **Связи:** `AnomalyEntity`.
 
 ---
 
-#### 3.1 `net.void_.anomalies.api.event.AnomalyDamageEvent`
+## 2. Фабрика и Данные Конфигурации (`anomaly`)
 
-Событие расчета и нанесения урона сущности со стороны аномалии.
+*Пакет:* `net.void_.anomalies.anomaly`
 
-* **Аннотация:** `@Cancelable`
-* **Параметры:**
-* `anomaly`: сущность аномалии (`AnomalyEntity`).
-* `target`: цель воздействия (`Entity`).
-* `anomalyType`: строковый идентификатор типа аномалии.
-* `zone`: текущая активная зона воздействия (`ZoneConfig`, может быть `null`).
-* `damageSource`: ванильный или кастомный источник урона (`DamageSource`).
-* `amount`: расчетный объем урона (`float`).
+### 2.1. Фабрика Сборки (`anomaly.ZoneFactory`)
 
+* **Класс:** `ZoneFactory`
+* **Назначение:** Composition Root. Настраивает геометрию, визуализацию, звук и логику взаимодействия сущности при скрещивании `AnomalyDefinition` (JSON) и `customOverrides` (NBT).
+* **Технические детали:**
+* `create(Level, x, y, z, type)` — проверяет существование `type` в `AnomalyReloadListener`, инстанцирует сущность через `EntityInit.ANOMALY.get().create(level)` и устанавливает стартовый тип.
+* `applyComponents(AnomalyEntity anomaly, String type)`:
+1. Всегда добавляет `SnapToGridComponent`.
+2. Извлекает `customOverrides` через `anomaly.getCustomOverrides()`.
+3. `setupDimensions()`: вызывает `OverrideHelper.getDimensions()` и обновляет габариты.
+4. `setupParticles()`: парсит `ParticleConfig`, считывает NBT-ключи `particleRadius`, `particleHeight`, регистрирует партиклы через `BuiltInRegistries.PARTICLE_TYPE`. Парсит `ParticleComponent.Shape` через `valueOf()` с фоллбэком на `SPHERE`.
+5. `setupSound()`: считывает NBT-ключи `soundVolume`, `soundPitch`, парсит `SoundSource` через `valueOf()` с фоллбэком на `BLOCKS`.
+6. `setupTriggerAndPhysics()`:
+* Создает базовый `DamageComponent` с диапазоном `MinMaxRange(0, 0)` и дефолтным `damageSources().generic()`.
+* Если список зон не пуст — сортирует зоны и инстанцирует `ImpulseComponent`.
+* Добавляет `TriggerComponent`, передавая в него лямбду `handleTriggerTarget`.
 
-* **Модификация:**
-* `setAmount(float amount)`: позволяет сторонним модам динамически изменять объем урона (с ограничением `Math.max(0, amount)`).
+* **Логика `handleTriggerTarget`:**
+1. Если `ignoreOtherAnomalies == true` и `target instanceof AnomalyEntity` — обработка прерывается.
+2. Вызывает `impulseComp.applyImpulse(anomaly, target)`.
+3. Определяет активную зону цели через `ZoneUtils.getActiveZone()`. Если `activeZone == null` — прерывает обработку.
+4. Если `target instanceof ItemEntity itemEntity` — публикует `AnomalyItemInteractEvent`.
+5. Для остальных сущностей публикует `AnomalyTriggerEvent`. При отмене события — прерывается.
+6. Если `activeZone.damage()` задан:
+* Накладывает поджигание: `target.setSecondsOnFire(fireSeconds)`.
+* Определяет источник урона через `getDamageSource()` (`"fire"` -> `inFire()`, `"lightning"` -> `lightningBolt()`, `"magic"` -> `magic()`, иначе `generic()`).
+* Наносит урон через `damageComp.inflictDamage()`.
 
-
-* **Назначение:** Реализация индивидуальных систем защиты, снижения урона броней/костюмами или полная отмена урона при срабатывании энергощитов.
-
----
-
-#### 3.2 `net.void_.anomalies.api.event.AnomalyItemInteractEvent`
-
-Событие взаимодействия аномалии с выброшенным предметом.
-
-* **Аннотация:** `@Cancelable`
-* **Параметры:**
-* `anomaly`: сущность аномалии (`AnomalyEntity`).
-* `itemEntity`: сущность предмета в мире (`ItemEntity`).
-* `itemStack`: стак предметов (`ItemStack`), извлеченный из `itemEntity`.
-* `anomalyType`: строковый идентификатор типа аномалии.
-
-
-* **Назначение:** Реализация механик трансмутации предметов, уничтожения лута, артефактогенеза или кастомных рецептов при броске предметов в аномалию.
+* **Связи:** `AnomalyEntity`, `AnomalyReloadListener`, `OverrideHelper`, `ZoneUtils`, `ImpulseComponent`, `DamageComponent`, `TriggerComponent`, `ParticleComponent`, `SoundComponent`, `EntityInit`.
 
 ---
 
-#### 3.3 `net.void_.anomalies.api.event.AnomalyPhysicsEvent`
+### 2.2. Конфигурационные Модели Данных (`anomaly.data`)
 
-Событие расчета и применения физического векторного импульса к сущности.
+#### `AnomalyDefinition` (Record)
 
-* **Аннотация:** `@Cancelable`
-* **Параметры:**
-* `anomaly`: сущность аномалии (`AnomalyEntity`).
-* `target`: цель воздействия (`Entity`).
-* `anomalyType`: строковый идентификатор типа аномалии.
-* `zone`: текущая активная зона воздействия (`ZoneConfig`, может быть `null`).
-* `deltaMovement`: итоговый вектор силы (`Vec3`), который будет применен к цели.
+* **Назначение:** DTO шаблона аномалии из JSON.
+* **Поля:** `SizeConfig size`, `List<ParticleConfig> particles`, `SoundConfig sound`, `TriggerConfig trigger`, `List<ZoneConfig> zones`, `PhysicsConfig physics`, `Boolean ignoreOtherAnomalies`.
 
+#### `ZoneConfig` (Record)
 
-* **Модификация:**
-* `setDeltaMovement(Vec3 deltaMovement)`: позволяет переопределить направления и силы векторов (притяжение, отталкивание, вращение).
-
-
-* **Назначение:** Модификация физики екзоскелетами, гасителями инерции, гравитационными ботинками или полная отмена смещения цели.
-
----
-
-#### 3.4 `net.void_.anomalies.api.event.AnomalyTriggerEvent`
-
-Событие детекции сущности в зоне срабатывания триггера аномалии.
-
-* **Аннотация:** `@Cancelable`
-* **Параметры:**
-* `anomaly`: сущность аномалии (`AnomalyEntity`).
-* `target`: обнаруживаемая сущность (`Entity`).
-* `anomalyType`: строковый идентификатор типа аномалии.
+* **Назначение:** DTO параметров конкретной пространственной зоны (слоя) аномалии.
+* **Поля:** `double radius`, `DamageConfig damage`, `PhysicsConfig physics`.
+* **Метод `contains(AnomalyEntity anomaly, Entity target)`:**
+* Проверяет цилиндрический объем зоны.
+* Рассчитывает горизонтальное расстояние: dx² + dz² ≤ radius²
+* Проверяет попадание по высоте Y: Y-координата цели находится в отрезке [anomaly.y - 0.5, anomaly.y + anomaly.height + 0.5]
 
 
-* **Назначение:** Глобальный перехват факта активации аномалии до применения эффектов урона и физики. Отмена события блокирует дальнейшую обработку активной зоны для цели.
+* **Связи:** `DamageConfig`, `PhysicsConfig`, `AnomalyEntity`, `Entity`.
 
 ---
+### 2.3. Вспомогательные Утилиты и Загрузчик JSON (`anomaly.util` / `anomaly.loader`)
 
-#### 3.5 `net.void_.anomalies.api.event.AnomalyZoneTransitionEvent`
+*Пакеты:* `net.void_.anomalies.anomaly.util`, `net.void_.anomalies.anomaly.loader`
 
-Событие перемещения сущности между концентрическими слоями (зонами) аномалии.
+#### `OverrideHelper` (`anomaly.util`)
 
-* **Аннотация:** `@Cancelable`
-* **Параметры:**
-* `anomaly`: сущность аномалии (`AnomalyEntity`).
-* `target`: передвигающаяся сущность (`Entity`).
-* `anomalyType`: строковый идентификатор типа аномалии.
-* `previousZone`: зона, в которой находилась сущность на предыдущем тике (`ZoneConfig`, может быть `null`).
-* `currentZone`: зона, в которую вошла сущность (`ZoneConfig`, может быть `null`).
+* **Назначение:** Безопасное извлечение кастомных переопределений из NBT-тега (`CompoundTag`) сущности с автоматическим фоллбэком на базовые значения из JSON-конфигураций.
+* **Технические детали:**
+* `getDimensions(CompoundTag tag, SizeConfig defaultConfig)` — считывает NBT-ключи `"width"` и `"height"` (сохраненные как `double` и кастуемые к `float`). При их отсутствии использует значения из `SizeConfig` (дефолт: `1.0f`).
+* `getZones(CompoundTag tag, List<ZoneConfig> defaultZones)` — если в NBT присутствует ключ `"zones_count"`, считывает целое число слоев `count`. Для каждого индекса `i` (от `0` до `count - 1`) последовательно извлекает:
+* `"zone_i_radius"` (`double`)
+* `"zone_i_damage"` (`double`) — оборачивается в `DamageConfig` с диапазоном `MinMaxRange(dmgAmount, dmgAmount)` и `damageType = "generic"`.
+* `"zone_i_pullForce"` (`double`), `"zone_i_spinForce"` (`double`), `"zone_i_impulseY"` (`double`) — оборачиваются в `PhysicsConfig(0, impY, 0, true, pullForce, spinForce)`.
+* Возвращает новый динамический список `List<ZoneConfig>`. При отсутствии `"zones_count"` возвращает `defaultZones` или пустой список `List.of()`.
 
-
-* **Вспомогательные методы:**
-* `isEntering()`: возвращает `true`, если сущность вошла в аномалию снаружи (`previousZone == null && currentZone != null`).
-* `isLeaving()`: возвращает `true`, если сущность полностью покинула пределы зон аномалии (`previousZone != null && currentZone == null`).
-
-
-* **Назначение:** Отслеживание границы аномалии для вызова звуковых эффектов входа/выхода, интерфейсных индикаторов радиации/опасности, а также наложения или снятия статусных эффектов.
-
-### 4. Подсистема инструментов администратора и редактирования в игре (`item` + `item.processor`)
-
-Данный модуль предоставляет инструмент администратора (`AnomalyMultitoolItem`), перехватчик событий взаимодействия (`AnomalyMultitoolHandler`), режимы работы (`MultitoolMode`) и специализированные интерактивные процессоры для инспекции, модификации, перемещения и удаления аномалий прямо в процессе игры.
-
----
-
-#### 4.1 Предмет и обработка событий
-
-##### `net.void_.anomalies.item.AnomalyMultitoolItem`
-
-Предмет мультитула администратора.
-
-* **Переключение режимов:** Сохраняет выбранный режим в NBT-теге (`Mode`). При нажатии `Shift + ПКМ` по воздуху перебирает состояния enum-перечисления `MultitoolMode` по кругу, очищая временные сессионные теги (`WaitingForParams`, `WaitingForOffset`, `SelectedAnomaly`).
-* **Отображение подсказок:** Метод `appendHoverText` выводит в всплывающую подсказку предмета текущий активный режим, его цветное название и краткое описание управления.
-
-##### `net.void_.anomalies.item.MultitoolMode` (Enum)
-
-Перечисление 4-х доступных режимов мультитула:
-
-* `ANALYZE` (Анализ — Бирюзовый): детальный вывод NBT-данных, конфигов и переопределений.
-* `MODIFY` (Изменение — Золотой): выбор аномалии для динамического ввода оверрайдов в чат.
-* `RELOCATE` (Перемещение — Зеленый): захват сущности с последующим переносом по клику по блоку или координатному смещению через чат.
-* `DELETE` (Удаление — Красный): быстрая аннигиляция сущности аномалии.
-
-##### `net.void_.anomalies.item.AnomalyMultitoolHandler`
-
-Подписчик событий Forge (`@Mod.EventBusSubscriber`), маршрутизирующий действия игрока:
-
-* `onEntityInteract`: при ПКМ по `AnomalyEntity` перенаправляет вызов в соответствующий процессор режима.
-* `onEntityAttacked`: при ЛКМ по `AnomalyEntity` в режиме `DELETE` вызывается `DeleteProcessor`.
-* `onLeftClickBlock`: при ЛКМ по блоку в режиме `RELOCATE` передает координаты клика для переноса.
-* `onServerChat`: перехватывает сообщения игрока в серверном чате для ввода параметров модификации (`MODIFY`) или вектора смещения (`RELOCATE`), сбрасывая событие `ServerChatEvent.setCanceled(true)`.
-
----
-
-#### 4.2 Процессоры режимов (`item.processor`)
-
-##### `net.void_.anomalies.item.processor.AnalyzeProcessor`
-
-* **Назначение:** Выводит подробный технический дамп параметров аномалии в чат игрока.
-* **Считываемые данные:** Размеры хитбокса, количество зон с их радиусами и уроном, настройки триггера, параметры физики притягивания, настройки звукового компонента и частиц.
-* **Подсветка оверрайдов:** Если параметр переопределен локально на сущности (хранится в NBT `customOverrides`), значение помечается специальным цветом и меткой `[Override]`.
-
-##### `net.void_.anomalies.item.processor.DeleteProcessor`
-
-* **Назначение:** Безопасное или мгновенное удаление аномалии.
-* **Двухэтапная система подтверждения:**
-* Обычный клик (ЛКМ/ПКМ): сохраняет UUID цели во внутреннюю карту `CONFIRM_MAP` с меткой времени. Требуется повторный клик в течение 5 секунд (`CONFIRM_TIMEOUT_MS = 5000`).
-* `Shift + Клик`: мгновенно уничтожает сущность (`anomaly.discard()`) без запроса подтверждения.
+* `getParticleInterval(CompoundTag tag, ParticleConfig pConfig)` — проверяет ключи `"particleIntervalMin"` / `"particleIntervalMax"`. Фоллбэк: `pConfig.interval().getDouble()` или `1`.
+* `getParticleCount(CompoundTag tag, ParticleConfig pConfig)` — проверяет ключи `"particleCountMin"` / `"particleCountMax"`. Фоллбэк: `pConfig.count().getDouble()` или `1`.
+* `getSoundInterval(CompoundTag tag, SoundConfig s)` — проверяет ключи `"soundIntervalMin"` / `"soundIntervalMax"`. Фоллбэк: `s.interval().getDouble()` или `20`.
+* `getTriggerInterval(CompoundTag tag, TriggerConfig t)` — проверяет ключ `"triggerInterval"`. Генерирует симметричный диапазон `MinMaxRange(min, min)`. Фоллбэк: `t.interval().getDouble()` или `5`.
 
 
+* **Связи:** `CompoundTag`, `ZoneConfig`, `DamageConfig`, `PhysicsConfig`, `MinMaxRange`, `ParticleConfig`, `SoundConfig`, `TriggerConfig`.
 
-##### `net.void_.anomalies.item.processor.ModifyProcessor`
+#### `ZoneUtils` (`anomaly.util`)
 
-* **Назначение:** Полный интерактивный редактор конфигурации и слоев зон аномалии через интерактивную чат-сессию.
-* **Основные функции:**
-* `Shift + ПКМ`: полностью очищает NBT-тег `customOverrides` сущности и перезапускает компоненты (`rebuildComponents()`).
-* **Поддержка команд в чате:**
-* Глобальные параметры: `width 2.0`, `height 3.0`, `expandRadius 5.0`, `soundVolume 1.5`, `pullToCenter true` и др.
-* Редактирование зон: `zone <индекс> <параметр> <значение>` (например, `zone 0 radius 4.0`).
-* Добавление зон: `zone add <radius> <damage> <pullForce> <spinForce>`.
-* Удаление зон: `zone remove <индекс>` (автоматически сдвигает оставшиеся слои).
+* **Назначение:** Алгоритм поиска активной зоны воздействия для сущности.
+* **Технические детали:**
+* `getActiveZone(List<ZoneConfig> zones, AnomalyEntity anomaly, Entity target)`:
+1. Проверяет валидность входных данных (`target != null`, `target.isAlive()`, список `zones` не пуст).
+2. Последовательно итерируется по списку `zones`.
+3. Так как список зон предварительно отсортирован в `ImpulseComponent` по возрастанию радиуса (`radius`), первый же слой, у которого метод `zone.contains(anomaly, target)` возвращает `true`, гарантированно является наименьшей (наиболее внутренней и опасной) активной зоной.
 
+* **Связи:** `ZoneConfig`, `AnomalyEntity`, `Entity`.
 
-* Выход из режима редактирования осуществляется по ключевым словам `done`, `exit` или `save`.
+#### `AnomalyReloadListener` (`anomaly.loader`)
 
-
-
-##### `net.void_.anomalies.item.processor.RelocateProcessor`
-
-* **Назначение:** Точное позиционирование аномалии в пространстве.
-* **Режимы перемещения:**
-* **Интерактивный перенос:** При ПКМ по аномалии сохраняет ее UUID. Следующий ЛКМ по любому блоку в мире мгновенно телепортирует аномалию на координаты блока (`+0.5` по оси X/Z для центрирования).
-* **Координатное смещение (`Shift + ПКМ`):** Запрашивает у игрока ввод относительно вектора $\Delta X, \Delta Y, \Delta Z$ в чат (например: `0.5 0 -0.5`).
-
-
-### 5. Подсистема инициализации и команд (`setup`)
-
-#### 5.1 `net.void_.anomalies.setup.AnomalyCommands`
-
-Регистратор внутриигровых команд сервера на базе Mojang Brigadier (`CommandDispatcher<CommandSourceStack>`).
-
-* **Команда:** `/anomaly <type>`
-* **Права доступа:** Уровень 2 (права оператора / администратора).
-* **Автокомплит аргументов:** Метод `.suggests()` подтягивает зарегистрированные идентификаторы из `AnomalyReloadListener.getKeys()`, подставляя в чат актуальный список загруженных из датапаков аномалий.
-* **Логика обработки:**
-1. Извлекает тип аномалии `type` из аргументов команды и координаты вызвавшего игрока.
-2. Фабричный метод `ZoneFactory.create(...)` инстанцирует `AnomalyEntity` с запрашиваемым типом.
-3. Сущность добавляется в мир через `level.addFreshEntity(anomaly)`.
-4. В чат игрока отправляется сообщение об успешном создании или ошибка при отсутствии JSON-конфигурации.
-
-
-
----
-
-#### 5.2 `net.void_.anomalies.setup.EntityInit`
-
-Реестр регистрации типов сущностей на базе Forge `DeferredRegister<EntityType<?>>`.
-
-* **Идентификатор сущности:** `anomalies:anomaly`
-* **Параметры `EntityType.Builder`:**
-* Класс сущности: `AnomalyEntity::new`.
-* Категория: `MobCategory.MISC`.
-* Дефолтный хитбокс: `1.0F` $\times$ `1.0F` (базовый габарит до загрузки оверрайдов размера).
-* `clientTrackingRange(64)`: радиус отслеживания сущности клиентом (64 блока).
-* `updateInterval(20)`: интервал синхронизации позиционирования по сети (раз в 20 тиков / 1 секунду).
-
-
-* **Связка шины:** Метод `register(IEventBus)` подключает регистр сущностей к событийной шине загрузки мода.
-
----
-
-### 6. Подсистема вспомогательных утилит (`anomaly.util`)
-
-#### 6.1 `net.void_.anomalies.anomaly.util.ZoneUtils`
-
-Утилитарный класс централизованного расчета активных зон.
-
-* **Назначение:** Полное разделение ответственности между физикой и уроном.
-
+* **Назначение:** Datapack-загрузчик шаблонов аномалий из JSON-файлов по пути `data/<mod_id>/anomalies/*.json`.
+* **Технические детали:**
+* Наследует `SimpleJsonResourceReloadListener`.
+* **Настройка GSON:** Создается через `GsonBuilder` с включенным режимом `.setLenient()` и зарегистрированным кастомным адаптером `MinMaxRange.Deserializer`.
+* **Статический реестр:** `Map<String, AnomalyDefinition> REGISTRY`.
+* **Загрузка датапаков (`apply`):**
+1. Очищает текущий реестр: `REGISTRY.clear()`.
+2. Парсит JSON-ресурсы в `AnomalyDefinition`.
+3. Регистрирует ключ строго по чистому нижнему регистру пути: `location.getPath().toLowerCase()` (например, ключ `"zharka"` вместо `"anomalies:zharka"`).
 
 * **Публичный интерфейс:**
-* `getActiveZone(List<ZoneConfig> zones, AnomalyEntity anomaly, Entity target)`: принимает список зон (отсортированный по возрастанию радиуса), аномалию и цель. Последовательно опрашивает `zone.contains(anomaly, target)` и возвращает наименьшую (внутреннюю) активную зону или `null`, если цель находится за пределами аномалии.
+* `get(String type)` — считывает `AnomalyDefinition` из реестра по имени типа (приводя запрос к lowerCase).
+* `getKeys()` — возвращает `Set<String>` всех зарегистрированных типов (используется для автокомплита в командах).
+* `exists(String type)` — проверяет наличие ключа аномалии в реестре.
+
+* **Связи:** `SimpleJsonResourceReloadListener`, `AnomalyDefinition`, `MinMaxRange`, `Gson`, `ResourceLocation`.
 
 ---
 
-#### 6.2 `net.void_.anomalies.anomaly.util.OverrideHelper`
+## 3. Расширяемый API Событий (`api.event`)
 
-Утилитарный класс-парсер NBT-переопределений (`customOverrides`).
+*Пакет:* `net.void_.anomalies.api.event`
 
-* **Назначение:** Изолирует низкоуровневую работу с NBT-тегами `CompoundTag`, обеспечивая приоритет данных: **NBT Override $\rightarrow$ DataPack JSON $\rightarrow$ Fallback Default**.
-* **Публичный интерфейс:**
-* `getDimensions(CompoundTag tag, SizeConfig defaultConfig)`: считывает ширину и высоту.
-* `getZones(CompoundTag tag, List<ZoneConfig> defaultZones)`: формирует список `ZoneConfig` при наличии в NBT ключа `zones_count` и динамических тегов `zone_i_*`.
-* `getParticleInterval()`, `getParticleCount()`, `getSoundInterval()`, `getTriggerInterval()`: безопасно извлекает диапазоны `MinMaxRange` с фаллбэком на базовые конфиги.
+Все события наследуются от `net.minecraftforge.eventbus.api.Event`, помечены аннотацией `@Cancelable` и публикуются на `MinecraftForge.EVENT_BUS`.
+* **`AnomalyTriggerEvent`**: Вызывается при попадании сущности в зону обнаружения аномалии. Отмена полностью блокирует дальнейшее воздействие (урон, эффекты).
+* **`AnomalyDamageEvent`**: Вызывается перед нанесением урона сущности активной зоной. Позволяет отменить урон или изменить его значение через `setAmount(float)`.
+* **`AnomalyPhysicsEvent`**: Вызывается перед применением вектора притяжения/выталкивания. Позволяет отменить физику или изменить вектор через `setDeltaMovement(Vec3)`.
+* **`AnomalyItemInteractEvent`**: Вызывается при попадании `ItemEntity` в область аномалии. Позволяет отменить ванильную реакцию аномалии на выпадающие предметы.
+* **`AnomalyZoneTransitionEvent`**: Вызывается при пересечении сущностью границы между зонами. Предоставляет методы `isEntering()` и `isLeaving()`. Позволяет заблокировать реакцию на смену зоны.
+---
+
+## 4. Компоненты Поведения (`components`)
+
+*Пакет:* `net.void_.anomalies.components`
+
+Модульные блоки реализации логики `IAnomalyComponent`, отвечающие за оптимизированное выполнение конкретных физических, визуальных и механических функций.
+
+---
+
+### 4.1. `DamageComponent` (`components.DamageComponent`)
+
+* **Класс:** `DamageComponent` (имплементирует `IAnomalyComponent`)
+* **Назначение:** Расчет, модификация через события и нанесение урона.
+* **Технические детали:**
+* Поля: `defaultDamageRange`, `defaultDamageSource`.
+* `serverTick()` и `clientTick()` — пустые реализации.
+* **Метод `inflictDamage(anomaly, target, zone, specificRange, overrideSource)`:**
+1. Проверяет жизнеспособность цели (`target.isAlive()`).
+2. Извлекает урон из `specificRange` (или фоллбэк на `defaultDamageRange`). При $damage \le 0$ прерывает выполнение.
+3. Выбирает источник урона (`overrideSource` или `defaultDamageSource`).
+4. Публикует `AnomalyDamageEvent` на `MinecraftForge.EVENT_BUS`.
+5. Если событие отменено — урон не наносится.
+6. Извлекает финальный урон через `damageEvent.getAmount()` и, если $amount > 0$, вызывает `target.hurt(sourceToUse, finalDamage)`.
+
+* **Связи:** `AnomalyDamageEvent`, `DamageSource`, `ZoneConfig`, `MinMaxRange`, `AnomalyEntity`.
+
+---
+
+### 4.2. `ImpulseComponent` (`components.ImpulseComponent`)
+
+* **Класс:** `ImpulseComponent` (имплементирует `IAnomalyComponent`)
+* **Назначение:** Физический движок расчета притяжения, выталкивания, вращения и отслеживания смены зон.
+* **Технические детали:**
+* **Конструктор:** Автоматически сортирует передаваемый список зон по возрастанию радиуса: `zones.stream().sorted(Comparator.comparingDouble(ZoneConfig::radius)).toList()`.
+* **Отслеживание зон:** `Map<UUID, ZoneConfig> entityZones`.
+* **Таймер очистки (`serverTick`):** Каждые 20 тиков (`cleanupTimer >= 20`) вызывает `cleanupStaleEntities()`. Проверяет сущности из `entityZones` через `serverLevel.getEntity(uuid)`. Если сущность умерла, удалена или вышла из всех зон — удаляет из карты и публикует `AnomalyZoneTransitionEvent` с `newZone = null`.
+* **Метод `applyImpulse(anomaly, target, precalculatedZone)`:**
+1. Проверяет смену текущей зоны цели относительно `entityZones.get(targetUuid)`.
+2. При изменении зоны публикует `AnomalyZoneTransitionEvent`. Если событие отменено — прерывает расчет физики.
+3. Извлекает конфигурацию `PhysicsConfig` (из `currentZone.physics()` или дефолтную `generalPhysics`).
+4. **Расчет вектора притяжения (`pullToCenter == true`):**
+* Центр аномалии: (ax, ay + height * 0.5, az)
+* Вектор до цели: (dx, dy, dz)
+* Нормализация направления с использованием единственного `Math.sqrt(distSq)`
+* **Тангенциальное вращение (Spin Force):** Применяется **только** если аномалия имеет более 1 зоны (`zones.size() > 1`) и цель находится в самой внутренней зоне (`currentZone == zones.get(0)`)
+* Формула близости: closeness = max(0.0, 1.0 - (dist / radius))
+* Сила вращения: aggressiveSpin = spinForce * (1.5 + closeness * 3.0)
+* Перпендикулярный вектор вращения: (-dirZ * aggressiveSpin, dirX * aggressiveSpin)
+* **Ограничение скорости:** Если moveX² + moveZ² > 1.0, горизонтальный вектор нормализуется до ровно 1.0 блока/тик
+5. **Расчет отталкивания (`pullToCenter == false`):** Добавляет фиксированные `impulseX`, `impulseY`, `impulseZ`.
+6. **Событие:** Публикует `AnomalyPhysicsEvent` с результирующим `Vec3`. Если не отменено — применяет вектор через `target.setDeltaMovement()` и устанавливает `target.hurtMarked = true`.
+
+* **Связи:** `AnomalyPhysicsEvent`, `AnomalyZoneTransitionEvent`, `ZoneUtils`, `PhysicsConfig`, `ZoneConfig`, `AnomalyEntity`.
+
+---
+### 4.3. `ParticleComponent` (`components.ParticleComponent`)
+
+* **Класс:** `ParticleComponent` (имплементирует `IAnomalyComponent`)
+* **Назначение:** Клиентский компонент генерации частиц заданной геометрической формы с оптимизацией производительности.
+* **Технические детали:**
+* **Перечисление `Shape`:** `SPHERE`, `CYLINDER`, `DISC`.
+* **Константа дистанции рендеринга:** `RENDER_DISTANCE_SQ = 4900.0D` (70² блоков).
+* **Клиентский LOD (Level of Detail):** В `clientTick()` проверяет расстояние до `Minecraft.getInstance().player`. Если игрок находится дальше 70 блоков — выполнение тика прерывается.
+* **Динамический таймер:** Каждые `nextTriggerTick` тиков генерирует новое значение из `intervalRange.getInt()`, сбрасывает счетчик `clientTickCounter` и запрашивает случайное количество частиц `countRange.getInt()`.
+* **Оптимизация Loop Unswitching:** Проверка `switch (shape)` вынесена за пределы цикла генерации точек, исключая повторные ветвления.
+* **Оптимизация Rejection Sampling:** Точки внутри объемов генерируются с помощью циклов `do-while` на примитивах без использования тригонометрических функций (`Math.sin`, `Math.cos`):
+* **`SPHERE`:** Точки отбраковываются по условию rx² + ry² + rz² > 1.0. Спавнятся с базовым импульсом по оси Y = 0.02.
+* **`CYLINDER`:** Отбраковка по rx² + rz² > 1.0, высота Y выбирается случайно в пределах `random.nextDouble() * height`. Базовый импульс по оси Y = 0.05.
+* **`DISC`:** Отбраковка по rx² + rz² > 1.0, смещение по Y задается микро-разбросом в пределах ± 0.05. Базовый импульс по оси Y = 0.01.
+* **Связи:** `ParticleOptions`, `MinMaxRange`, `Minecraft`, `AnomalyEntity`, `Level`.
+
+---
+
+### 4.4. `SoundComponent` (`components.SoundComponent`)
+
+* **Класс:** `SoundComponent` (имплементирует `IAnomalyComponent`)
+* **Назначение:** Клиентский компонент проигрывания пространственных звуковых эффектов с динамическими интервалами задержки.
+* **Технические детали:**
+* **Поля:** `soundEvent`, `intervalRange`, `soundSource`, `volume`, `pitch`.
+* **Серверный тик (`serverTick`):** Пустая реализация.
+* **Клиентский тик (`clientTick`):**
+* Увеличивает `clientTickCounter`.
+* По достижению `nextTriggerTick` генерирует новый интервал `intervalRange.getInt()`.
+* Вызывает `level.playLocalSound(pos.x, pos.y, pos.z, soundEvent, soundSource, volume, pitch, false)`. Параметр `distanceDelay = false` гарантирует мгновенный старт воспроизведения.
+
+* **Связи:** `SoundEvent`, `SoundSource`, `MinMaxRange`, `AnomalyEntity`, `Level`.
+
+---
+
+### 4.5. `TriggerComponent` (`components.TriggerComponent`)
+
+* **Класс:** `TriggerComponent` (имплементирует `IAnomalyComponent`)
+* **Назначение:** Серверный пространственный сканер обнаружения целей в области действия аномалии.
+* **Технические детали:**
+* **Константа радиуса сна:** `ACTIVATION_DISTANCE = 48.0D` блоков.
+* **Серверная LOD-оптимизация (Спящий режим):** В `serverTick()` проверяет наличие ближайшего игрока через `level.getNearestPlayer(x, y, z, 48.0, false)`. Если игроков в радиусе 48 блоков нет — сканирование AABB отменяется, экономится процессорное время.
+* **Интервальное сканирование:** По истечении `currentIntervalTicks` (получаемого из `interval.getInt()`) производит поиск сущностей.
+* **AABB и фильтрация целей:**
+* Расширяет хитбокс аномалии во все стороны на `expandRadius`: `getBoundingBox().inflate(expandRadius)`.
+* Извлекает список целей через `getEntitiesOfClass()`, фильтруя их по принадлежности к `LivingEntity` или `ItemEntity`.
+
+
+* **Вызов обработчика:** Последовательно передает каждую найденную сущность в `onTrigger.accept(anomaly, target)` (в лямбду-оркестратор `ZoneFactory.handleTriggerTarget`).
+
+
+* **Связи:** `AABB`, `LivingEntity`, `ItemEntity`, `Player`, `MinMaxRange`, `BiConsumer`, `AnomalyEntity`, `ZoneFactory`.
+
+
+
+### 4.6. `SnapToGridComponent` (`components.SnapToGridComponent`)
+
+* **Класс:** `SnapToGridComponent` (имплементирует `IAnomalyComponent`)
+* **Назначение:** Автоматическое выравнивание позиционирования аномалии по сетке блоков.
+* **Технические детали:**
+* Содержит флаг однократного выполнения `private boolean isSnapped = false`.
+* В `serverTick(AnomalyEntity anomaly)` исполняется только при `!isSnapped`:
+* Рассчитывает точный геометрический центр блока:
+* x = floor(anomaly.getX()) + 0.5
+* y = floor(anomaly.getY()) (нижняя граница блока)
+* z = floor(anomaly.getZ()) + 0.5
+
+
+* Обновляет позицию сущности через `anomaly.setPos(x, y, z)`.
+* Устанавливает `isSnapped = true`, предотвращая дергание и постоянный сдвиг позиции при последующих тиках сервера.
+
+* **Связи:** `AnomalyEntity`, `IAnomalyComponent`.
+
+## 5. Система Управления и Мультитул (`item`)
+
+*Пакет:* `net.void_.anomalies.item`
+
+Полное описание архитектуры взаимодействия с мультитулом, логики обработки событий и встроенных процессоров режимов управления аномалиями.
+
+---
+
+### 5.1. Обработчик Событий и Шина Взаимодействия
+
+* **Класс:** `AnomalyMultitoolHandler`
+* **Назначение:** Шина перехвата игровых событий Forge (`@Mod.EventBusSubscriber`) для маршрутизации команд игрока в соответствующие процессоры режимов.
+* **Технические детали:**
+* **Перехват ПКМ (`onEntityInteract`):**
+* Проверяет удерживаемый предмет в `MAIN_HAND` через `isMultitool()`.
+* Отменяет ванильное действие (`setCanceled(true)`).
+* При смене текущего режима с `MODIFY` на другой автоматически вызывает `ModifyProcessor.clearSession()` для очистки стейта в NBT.
+* Перенаправляет вызов в `AnalyzeProcessor`, `ModifyProcessor`, `RelocateProcessor` или `DeleteProcessor` в зависимости от `MultitoolMode`.
+
+
+* **Перехват ЛКМ по аномалии (`onEntityAttacked`):** В режиме `DELETE` блокирует нанесение ванильного урона и вызывает `DeleteProcessor.process()`.
+* **Перехват ЛКМ по блоку (`onLeftClickBlock`):** Если в NBT мультитула активирован захват аномалии в режиме `RELOCATE`, отменяет ломание блоков и вызывает `RelocateProcessor.onLeftClickBlock()`.
+* **Перехват ЧАТА (`onServerChat`):** Перехватывает сообщения игрока на сервере (`ServerChatEvent`). При активных режимах `MODIFY` или `RELOCATE` сообщения поглощаются (`setCanceled(true)`), а их текст передается в `onChat()` соответствующего процессора.
+
+* **Связи:** `AnomalyMultitoolItem`, `MultitoolMode`, `AnalyzeProcessor`, `ModifyProcessor`, `RelocateProcessor`, `DeleteProcessor`, `ServerChatEvent`, `PlayerInteractEvent`.
+
+---
+
+### 5.2. Процессоры Режимов Мультитула (`item.processor`)
+
+#### `AnalyzeProcessor`
+
+* **Назначение:** Считывание и вывод исчерпывающей диагностической информации об аномалии в чат игрока.
+* **Технические детали:**
+* **Метод:** `process(Player player, AnomalyEntity anomaly)`.
+* Сравнивает текущие значения параметров в `customOverrides` с базовым `AnomalyDefinition` из `AnomalyReloadListener`.
+* Форматирует и выводит в системный чат игрока следующие блоки данных:
+1. **Идентификация:** Тип аномалии и короткий UUID (первые 8 символов).
+2. **Размеры (`width` x `height`):** Выводит текущие габариты хитбокса.
+3. **Слои зон и урон:** Перечисляет все слои `ZoneConfig` с указанием радиуса, максимального урона (`dmgAmount`) и времени горения (`fireSeconds`).
+4. **Триггер:** Радиус обнаружения целей (`expandRadius`).
+5. **Физика:** Флаг и вектор притяжения (`pullToCenter`).
+6. **Звук и Частицы:** Громкость/высота тона звука и радиус/высота спавна частиц.
+
+
+* **Маркировка оверрайдов (`formatVal`):** Если параметр переопределен локально в NBT сущности, выводит его с выделением `§e§l[Value] §6[Override]`, иначе с подсвечиванием базового значения `§f[Value]`.
+
+
+* **Связи:** `AnomalyEntity`, `AnomalyDefinition`, `AnomalyReloadListener`, `CompoundTag`, `Component`.
+
+#### `DeleteProcessor`
+
+* **Назначение:** Безопасное удаление сущности аномалии из мира с двухуровневым подтверждением.
+* **Технические детали:**
+* **Кэш подтверждений:** Статическая карта `CONFIRM_MAP` типа `Map<UUID, ConfirmData>` с таймаутом `CONFIRM_TIMEOUT_MS = 5000` (5 секунд).
+* **Логика удаления:**
+* **Shift + ЛКМ / ПКМ:** Мгновенный вызов `anomaly.discard()`, минуя стадию подтверждения.
+* **Обычный клик:** При первом клике заносит `UUID` аномалии и timestamp в кэш и отправляет предупреждение в чат. Повторный клик по той же аномалии в течение 5 секунд вызывает `anomaly.discard()` и очищает запись из кэша.
+
+* **Связи:** `AnomalyEntity`, `Player`, `ConfirmData`.
+
+#### `RelocateProcessor`
+
+* **Назначение:** Интерактивный перенос сущности аномалии в пространстве (по клику на блок или по координатным смещениям через чат).
+* **Технические детали:**
+* **Захват (`onInteract`):** Сохраняет `SelectedAnomaly` (UUID) в NBT предмета.
+* **Режим 1: Перенос по клику (Обычный ПКМ -> ЛКМ по блоку):**
+* `onLeftClickBlock`: При клике по блоку вычисляет целевую позицию `(x + 0.5, y + 1.0, z + 0.5)`, устанавливает новые координаты сущности через `anomaly.setPos()` и стирает `SelectedAnomaly` из NBT предмета.
+
+
+* **Режим 2: Перенос по смещению (Shift + ПКМ -> Чат):**
+* Устанавливает флаг NBT `WaitingForOffset = true`.
+* `onChat`: Парсит сообщение формата `dx dy dz` (например, `0.5 0 -0.5`). Извлекает координаты `position()`, добавляет смещение, перемещает сущность и сбрасывает флаги NBT.
+
+
+### 5.3. Предмет Мультитула и Перечисление Режимов (`item`)
+
+#### `AnomalyMultitoolItem` (`item.AnomalyMultitoolItem`)
+
+* **Класс:** `AnomalyMultitoolItem` (расширяет `net.minecraft.world.item.Item`)
+* **Назначение:** Главный инструмент администратора для диагностики, редактирования параметров, перемещения и удаления аномалий.
+* **Технические детали:**
+* **Хранение состояния:** Текущий режим сохраняется в NBT предмета по ключу `"Mode"` (`String`).
+* **Считывание и запись режима:**
+* `getMode(ItemStack stack)` — читает NBT-тег `"Mode"`. При отсутствии тега или неверном значении возвращает `MultitoolMode.ANALYZE`.
+* `setMode(ItemStack stack, MultitoolMode mode)` — записывает строковое имя режима (`mode.name()`) в NBT предмета.
+
+
+* **Переключение режима (`use`):**
+* Вызывается при **Shift + ПКМ по воздуху**.
+* На сервере переключает режим на следующий по циклу: `current.next()`.
+* **Очистка сессионных данных:** При смене режима принудительно удаляет временные NBT-ключи из предмета: `"WaitingForParams"`, `"WaitingForOffset"` и `"SelectedAnomaly"`.
+* Отправляет всплывающее сообщение в Action Bar игрока с названием и стилизованным цветом нового режима.
+
+
+* **Отображение подсказок (`appendHoverText`):** Формирует тултип предмета, выводя текущий режим, цвет, краткое описание из `MultitoolMode` и инструкцию по смене режима.
+
+
+* **Связи:** `MultitoolMode`, `CompoundTag`, `ItemStack`, `Player`.
+
+#### `MultitoolMode` (`item.MultitoolMode`)
+
+* **Перечисление:** `MultitoolMode`
+* **Назначение:** Набор поддерживаемых режимов работы мультитула.
+* **Значения:**
+* `ANALYZE` ("Анализ", `ChatFormatting.AQUA`): вывод характеристик аномалии в чат.
+* `MODIFY` ("Изменение", `ChatFormatting.GOLD`): запуск интерактивной сессии редактирования через чат или сброс оверрайдов.
+* `RELOCATE` ("Перемещение", `ChatFormatting.GREEN`): захват аномалии, сдвиг по координатам через чат или перенос кликом по блоку.
+* `DELETE` ("Удаление", `ChatFormatting.RED`): мгновенное уничтожение аномалии.
+
+
+* **Метод циклической ротации (`next()`):** `values()[(this.ordinal() + 1) % values().length]` — обеспечивает зацикленное переключение режимов по кругу.
+* **Связи:** `AnomalyMultitoolItem`, `ChatFormatting`.
+
+---
+
+* **Связи:** `AnomalyEntity`, `ItemStack`, `CompoundTag`, `ServerLevel`, `BlockPos`.
+* ## 6. Клиентская Часть (`client`)
+
+*Пакет:* `net.void_.anomalies.client`
+
+### 6.1. Невидимый Рендерер Сущности
+
+* **Класс:** `AnomalyRenderer` (расширяет `EntityRenderer<AnomalyEntity>`)
+* **Назначение:** Отключение стандартной трехмерной полигональной модели сущности при сохранении активного клиенского тикинга.
+* **Технические детали:**
+* **Текстура-заглушка:** `getTextureLocation()` возвращает путь `anomalies:textures/entity/anomaly.png`.
+* **Управление видимостью (`shouldRender`):** Метод явно возвращает `true`. Это предотвращает отсечение (culling) сущности движком рендеринга Minecraft и гарантирует постоянное исполнение клиентских компонентов (`ParticleComponent`, `SoundComponent`), несмотря на отсутствие физической геометрии или полигональной модели.
+
+
+* **Связи:** `EntityRenderer`, `AnomalyEntity`, `ParticleComponent`, `SoundComponent`.
+
+---
+
+### 6.2. Регистратор Клиентской Части (`client.ClientSetup`)
+
+* **Класс:** `ClientSetup`
+* **Назначение:** Привязка визуализаторов сущностей на стороне клиента.
+* **Технические детали:**
+* Помечен аннотацией `@Mod.EventBusSubscriber(modid = "anomalies", value = Dist.CLIENT, bus = Bus.MOD)`.
+* **Перехват события (`registerRenderers`):** Подписан на `EntityRenderersEvent.RegisterRenderers` на шине мода.
+* Связывает зарегистрированный тип сущности `EntityInit.ANOMALY.get()` с пустой моделью рендерера `AnomalyRenderer::new`.
+
+
+* **Связи:** `EntityRenderersEvent.RegisterRenderers`, `EntityInit`, `AnomalyRenderer`, `Dist.CLIENT`.
+
+---
+
+## 7. Инициализация, Команды и Точка Входа (`setup` / `root`)
+
+*Пакеты:* `net.void_.anomalies.setup`, `net.void_.anomalies`
+
+### 7.1. Командный Интерфейс Администрирования
+
+* **Класс:** `AnomalyCommands`
+* **Назначение:** Регистрация и обработка внутриигровой консольной команды `/anomaly <type>` для спавна аномалий.
+* **Технические детали:**
+* **Уровень доступа:** Требует `hasPermission(2)` (уровень оператора/администратора).
+* **Динамический автокомплит (`suggests`):** Подтягивает список всех доступных типов аномалий на лету из `AnomalyReloadListener.getKeys()`.
+* **Логика выполнения (`executes`):**
+1. Извлекает имя типа `type` из аргументов команды.
+2. Вызывает `ZoneFactory.create()` с координатами игрока.
+3. При успешном создании спавнит сущность в мир через `level.addFreshEntity(anomaly)` и выводит сообщение об успехе.
+4. Если тип не найден в реестре — отправляет сообщение об ошибке.
+
+* **Связи:** `CommandDispatcher`, `CommandSourceStack`, `ZoneFactory`, `AnomalyReloadListener`, `AnomalyEntity`.
+
+### 7.2. Инициализация Сущностей (`setup.EntityInit`)
+
+* **Класс:** `EntityInit`
+* **Назначение:** Регистрация типа сущности `AnomalyEntity` в реестрах Minecraft Forge.
+* **Технические детали:**
+* **Реестр:** `DeferredRegister<EntityType<?>> ENTITIES = DeferredRegister.create(Registries.ENTITY_TYPE, "anomalies")`.
+* **Регистрационная запись `ANOMALY` (`RegistryObject<EntityType<AnomalyEntity>>`):**
+* Категория сущности: `MobCategory.MISC`.
+* Базовый хитбокс: `sized(1.0F, 1.0F)`.
+* Дистанция отслеживания пакетов клиентом: `clientTrackingRange(64)` (64 блока).
+* Частота обновления сетевых пакетов: `updateInterval(20)` (раз в 20 тиков / 1 секунду).
+
+* **Метод `register(IEventBus eventBus)`:** Подключает реестр `ENTITIES` к шине событий мода.
+
+* **Связи:** `DeferredRegister`, `RegistryObject`, `EntityType`, `MobCategory`, `AnomalyEntity`, `Anomalies`.
