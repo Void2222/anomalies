@@ -11,6 +11,7 @@ import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import net.minecraftforge.common.MinecraftForge;
 import net.void_.anomalies.api.event.AnomalyItemInteractEvent;
@@ -20,6 +21,7 @@ import net.void_.anomalies.anomaly.loader.AnomalyReloadListener;
 import net.void_.anomalies.anomaly.util.OverrideHelper;
 import net.void_.anomalies.anomaly.util.ZoneUtils;
 import net.void_.anomalies.components.*;
+import net.void_.anomalies.config.AnomalyIgnoreManager;
 import net.void_.anomalies.core.AnomalyEntity;
 import net.void_.anomalies.setup.EntityInit;
 
@@ -127,6 +129,9 @@ public class ZoneFactory {
 
     private static void handleTriggerTarget(AnomalyEntity anomaly, Entity target, ImpulseComponent impulseComp, DamageComponent damageComp, List<ZoneConfig> zones, boolean ignoreAnomalies) {
         if (ignoreAnomalies && target instanceof AnomalyEntity) return;
+
+        // 🛑 Проверка списка игнорирования игроков
+        if (target instanceof Player player && AnomalyIgnoreManager.isIgnored(player)) return;
 
         if (impulseComp != null) {
             impulseComp.applyImpulse(anomaly, target);

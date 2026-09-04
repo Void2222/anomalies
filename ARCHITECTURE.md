@@ -29,11 +29,11 @@ net.void_.anomalies
 │   └── util/     # Математические утилиты расчета зон и оверрайдов
 ├── client/       # Клиентская часть (Рендереры, клиентские эвенты)
 ├── components/   # Реализации компонентов поведения (ECS)
+├── config/       # Конфигурационные менеджеры и хранилища данных (JSON/Forge Config)
 ├── core/         # Ядро движка (Entity, Component Interface)
 ├── item/         # Мультитул и процессоры управления (Strategy Pattern)
 │   └── processor/# Процессоры режимов (Analyze, Modify, Relocate, Delete)
 └── setup/        # Инициализация, регистрация сущностей и команды
-
 ```
 
 ---
@@ -123,6 +123,19 @@ net.void_.anomalies
 
 ---
 
+### 1.3. Менеджер Игнорирования Игроков (`config.AnomalyIgnoreManager`)
+
+* **Класс:** `AnomalyIgnoreManager`
+* **Назначение:** Персистентное хранение и проверка списка игроков, защищенных от воздействия аномалий.
+* **Технические детали:**
+    * **Путь к файлу:** `config/anomalies_ignored_players.json`.
+    * **Кэш в памяти:** `Set<UUID> IGNORED_PLAYERS` с ленивой загрузкой при первом обращении (`ensureLoaded()`).
+    * `isIgnored(Player player)` / `isIgnored(UUID uuid)` — проверка статуса игрока.
+    * `setIgnored(UUID uuid, boolean ignore)` — добавляет или удаляет UUID из набора и атомарно перезаписывает JSON-файл на диске via GSON.
+* **Связи:** `ZoneFactory`, `TriggerComponent`, `AnomalyCommands`.
+
+---
+
 ## 2. Фабрика и Данные Конфигурации (`anomaly`)
 
 *Пакет:* `net.void_.anomalies.anomaly`
@@ -145,15 +158,16 @@ net.void_.anomalies
 * Добавляет `TriggerComponent`, передавая в него лямбду `handleTriggerTarget`.
 
 * **Логика `handleTriggerTarget`:**
-1. Если `ignoreOtherAnomalies == true` и `target instanceof AnomalyEntity` — обработка прерывается.
-2. Вызывает `impulseComp.applyImpulse(anomaly, target)`.
-3. Определяет активную зону цели через `ZoneUtils.getActiveZone()`. Если `activeZone == null` — прерывает обработку.
-4. Если `target instanceof ItemEntity itemEntity` — публикует `AnomalyItemInteractEvent`.
-5. Для остальных сущностей публикует `AnomalyTriggerEvent`. При отмене события — прерывается.
-6. Если `activeZone.damage()` задан:
-* Накладывает поджигание: `target.setSecondsOnFire(fireSeconds)`.
-* Определяет источник урона через `getDamageSource()` (`"fire"` -> `inFire()`, `"lightning"` -> `lightningBolt()`, `"magic"` -> `magic()`, иначе `generic()`).
-* Наносит урон через `damageComp.inflictDamage()`.
+    1. Если `ignoreOtherAnomalies == true` и `target instanceof AnomalyEntity` — обработка прерывается.
+    2. Если `target instanceof Player player` и `AnomalyIgnoreManager.isIgnored(player)` — обработка прерывается (игрок игнорируется аномалией).
+    3. Вызывает `impulseComp.applyImpulse(anomaly, target)`.
+    4. Определяет активную зону цели через `ZoneUtils.getActiveZone()`. Если `activeZone == null` — прерывает обработку.
+    5. Если `target instanceof ItemEntity itemEntity` — публикует `AnomalyItemInteractEvent`.
+    6. Для остальных сущностей публикует `AnomalyTriggerEvent`. При отмене события — прерывается.
+    7. Если `activeZone.damage()` задан:
+        * Накладывает поджигание: `target.setSecondsOnFire(fireSeconds)`.
+        * Определяет источник урона через `getDamageSource()`.
+        * Наносит урон через `damageComp.inflictDamage()`.
 
 * **Связи:** `AnomalyEntity`, `AnomalyReloadListener`, `OverrideHelper`, `ZoneUtils`, `ImpulseComponent`, `DamageComponent`, `TriggerComponent`, `ParticleComponent`, `SoundComponent`, `EntityInit`.
 
@@ -343,6 +357,10 @@ net.void_.anomalies
 * **Серверная LOD-оптимизация (Спящий режим):** В `serverTick()` проверяет наличие ближайшего игрока через `level.getNearestPlayer(x, y, z, 48.0, false)`. Если игроков в радиусе 48 блоков нет — сканирование AABB отменяется, экономится процессорное время.
 * **Интервальное сканирование:** По истечении `currentIntervalTicks` (получаемого из `interval.getInt()`) производит поиск сущностей.
 * **AABB и фильтрация целей:**
+    * Расширяет хитбокс аномалии во все стороны на `expandRadius`: `getBoundingBox().inflate(expandRadius)`.
+    * Извлекает список целей через `getEntitiesOfClass()`, с фильтром:
+        * Отсекает игроков, для которых `AnomalyIgnoreManager.isIgnored(player) == true`.
+        * Пропускает только `LivingEntity` и `ItemEntity`.
 * Расширяет хитбокс аномалии во все стороны на `expandRadius`: `getBoundingBox().inflate(expandRadius)`.
 * Извлекает список целей через `getEntitiesOfClass()`, фильтруя их по принадлежности к `LivingEntity` или `ItemEntity`.
 
@@ -527,17 +545,15 @@ net.void_.anomalies
 ### 7.1. Командный Интерфейс Администрирования
 
 * **Класс:** `AnomalyCommands`
-* **Назначение:** Регистрация и обработка внутриигровой консольной команды `/anomaly <type>` для спавна аномалий.
+* **Назначение:** Регистрация и обработка консольных команд администрирования аномалий.
 * **Технические детали:**
-* **Уровень доступа:** Требует `hasPermission(2)` (уровень оператора/администратора).
-* **Динамический автокомплит (`suggests`):** Подтягивает список всех доступных типов аномалий на лету из `AnomalyReloadListener.getKeys()`.
-* **Логика выполнения (`executes`):**
-1. Извлекает имя типа `type` из аргументов команды.
-2. Вызывает `ZoneFactory.create()` с координатами игрока.
-3. При успешном создании спавнит сущность в мир через `level.addFreshEntity(anomaly)` и выводит сообщение об успехе.
-4. Если тип не найден в реестре — отправляет сообщение об ошибке.
+    * **Уровень доступа:** Требует `hasPermission(2)` (уровень оператора/администратора).
+    * **Структура команд:**
+        * `/anomaly create <type>` — Спавнит аномалию указанного типа по координатам игрока. Поддерживает динамический автокомплит типов из `AnomalyReloadListener.getKeys()`.
+        * `/anomaly ignore <player> <state>` — Устанавливает статус игнорирования игрока аномалиями (`true`/`false`). Сохраняет значение через `AnomalyIgnoreManager.setIgnored()`.
+      
+* **Связи:** `CommandDispatcher`, `CommandSourceStack`, `ZoneFactory`, `AnomalyReloadListener`, `AnomalyIgnoreManager`, `AnomalyEntity`.
 
-* **Связи:** `CommandDispatcher`, `CommandSourceStack`, `ZoneFactory`, `AnomalyReloadListener`, `AnomalyEntity`.
 
 ### 7.2. Инициализация Сущностей (`setup.EntityInit`)
 

@@ -6,6 +6,7 @@ import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.AABB;
 import net.void_.anomalies.anomaly.data.MinMaxRange;
+import net.void_.anomalies.config.AnomalyIgnoreManager;
 import net.void_.anomalies.core.AnomalyEntity;
 import net.void_.anomalies.core.IAnomalyComponent;
 
@@ -52,7 +53,13 @@ public class TriggerComponent implements IAnomalyComponent {
             List<Entity> targets = anomaly.level().getEntitiesOfClass(
                     Entity.class,
                     area,
-                    entity -> (entity instanceof LivingEntity || entity instanceof ItemEntity)
+                    entity -> {
+                        // 🛑 Игнорируем игроков из конфигурации ignore-менеджера
+                        if (entity instanceof Player player && AnomalyIgnoreManager.isIgnored(player)) {
+                            return false;
+                        }
+                        return (entity instanceof LivingEntity || entity instanceof ItemEntity);
+                    }
             );
 
             for (Entity target : targets) {
