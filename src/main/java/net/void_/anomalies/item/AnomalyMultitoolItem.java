@@ -38,45 +38,32 @@ public class AnomalyMultitoolItem extends Item {
     public InteractionResultHolder<ItemStack> use(Level level, Player player, InteractionHand hand) {
         ItemStack stack = player.getItemInHand(hand);
 
-        // Работаем только на сервере и только с главной рукой
-        if (!level.isClientSide && hand == InteractionHand.MAIN_HAND) {
-            CompoundTag tag = stack.getOrCreateTag();
+        if (hand != InteractionHand.MAIN_HAND) {
+            return InteractionResultHolder.pass(stack);
+        }
 
-            // 1. Проверяем, находится ли мультитул в процессе интерактивного ввода
-            boolean isWaitingForOffset = tag.getBoolean("WaitingForOffset");
-            boolean isWaitingForParams = tag.getBoolean("WaitingForParams");
+        if (player.isShiftKeyDown()) {
+            if (!level.isClientSide) {
+                CompoundTag tag = stack.getOrCreateTag();
 
-            // 2. Если зажат Shift
-            if (player.isShiftKeyDown()) {
-
-                // Если игрок зажал Shift+ПКМ по воздуху ПОСЛЕ того, как выделил аномалию — отменяем выделение
-                if (isWaitingForOffset || isWaitingForParams) {
-                    tag.remove("WaitingForOffset");
-                    tag.remove("WaitingForParams");
-                    tag.remove("SelectedAnomaly");
-
-                    player.sendSystemMessage(Component.literal("§c[Мультитул] Выбор аномалии сброшен."));
-                    return InteractionResultHolder.success(stack);
-                }
-
-                // Если интерактивных режимов не было — переключаем режим мультитула по кругу
-                MultitoolMode currentMode = getMode(stack);
-                MultitoolMode nextMode = currentMode.next();
-                setMode(stack, nextMode);
-
-                // Очищаем сессионные NBT-теги при смене режима
+                // Очищаем сессионные NBT-теги при переключении режима
                 tag.remove("WaitingForOffset");
                 tag.remove("WaitingForParams");
                 tag.remove("SelectedAnomaly");
+
+                // Переключаем режим на следующий
+                MultitoolMode currentMode = getMode(stack);
+                MultitoolMode nextMode = currentMode.next();
+                setMode(stack, nextMode);
 
                 // Сообщение в Action Bar
                 player.displayClientMessage(
                         Component.literal("§lРежим: " + nextMode.getColor() + nextMode.getName()),
                         true
                 );
-
-                return InteractionResultHolder.success(stack);
             }
+            // Возвращаем sidedSuccess на обеих сторонах, чтобы клиент отправлял пакет на сервер
+            return InteractionResultHolder.sidedSuccess(stack, level.isClientSide());
         }
 
         return InteractionResultHolder.pass(stack);

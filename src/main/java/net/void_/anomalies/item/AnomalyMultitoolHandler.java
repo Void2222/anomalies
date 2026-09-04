@@ -29,16 +29,25 @@ public class AnomalyMultitoolHandler {
     public static void onEntityInteract(PlayerInteractEvent.EntityInteract event) {
         ItemStack stack = event.getItemStack();
 
-        if (isMultitool(stack)) {
-            // Отменяем стандартную обработку клика ПКМ, чтобы игра не вызывала use() сразу после этого
+        if (isMultitool(stack) && event.getTarget() instanceof AnomalyEntity anomaly) {
+            // Отменяем стандартную обработку ПКМ, фиксируя результат взаимодействия
             event.setCanceled(true);
             event.setCancellationResult(InteractionResult.SUCCESS);
 
             Player player = event.getEntity();
-            if (player.level().isClientSide) return; // Выполняем логику только на сервере!
+            if (player.level().isClientSide) return; // Логику выполняем строго на сервере
 
-            // Передаем управление в процессор
-            RelocateProcessor.onInteract(player, stack, (AnomalyEntity) event.getTarget(), player.isShiftKeyDown());
+            MultitoolMode mode = AnomalyMultitoolItem.getMode(stack);
+
+            // Маршрутизация ПКМ по активному режиму
+            switch (mode) {
+                case ANALYZE -> AnalyzeProcessor.process(player, anomaly);
+                case MODIFY -> ModifyProcessor.onInteract(player, stack, anomaly, player.isShiftKeyDown());
+                case RELOCATE -> RelocateProcessor.onInteract(player, stack, anomaly, player.isShiftKeyDown());
+                case DELETE -> {
+                    // Удаление происходит по ЛКМ (AttackEntityEvent), ПКМ игнорируем
+                }
+            }
         }
     }
 
@@ -69,10 +78,8 @@ public class AnomalyMultitoolHandler {
         if (stack.getItem() instanceof AnomalyMultitoolItem) {
             CompoundTag tag = stack.getTag();
             if (tag != null && tag.hasUUID("SelectedAnomaly") && !tag.getBoolean("WaitingForOffset")) {
-                // Блокируем разрушение блока на клиенте и сервере
                 event.setCanceled(true);
 
-                // Логику переноса вызываем только на сервере
                 if (!player.level().isClientSide) {
                     RelocateProcessor.onLeftClickBlock(player, stack, event.getPos());
                 }
