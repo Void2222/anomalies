@@ -38,46 +38,6 @@ net.void_.anomalies
 
 ---
 
-## 🔄 Жизненный Цикл и Схема Данных
-
-```text
-       ┌────────────────────────┐
-       │     JSON Datapack      │
-       └───────────┬────────────┘
-                   │
-                   ▼
-       ┌────────────────────────┐         ┌────────────────────────┐
-       │ AnomalyReloadListener  │         │   Item / Entity NBT    │
-       └───────────┬────────────┘         │   (customOverrides)    │
-                   │                      └───────────┬────────────┘
-                   ▼                                  │
-         ┌───────────────────┐                        │
-         │ AnomalyDefinition │                        │
-         └─────────┬─────────┘                        │
-                   │                                  │
-                   └────────────────┬─────────────────┘
-                                    │
-                                    ▼
-                         ┌────────────────────┐
-                         │    ZoneFactory     │ (Composition Root)
-                         └──────────┬─────────┘
-                                    │
-                                    ▼
-                         ┌────────────────────┐
-                         │   AnomalyEntity    │ (Runtime Container)
-                         └──────────┬─────────┘
-                                    │
-          ┌─────────────────────────┼─────────────────────────┐
-          ▼                         ▼                         ▼
-  ┌───────────────┐         ┌───────────────┐         ┌───────────────┐
-  │   Server      │         │    Client     │         │ Forge Events  │
-  │  Components   │         │  Components   │         │   (Public)    │
-  └───────────────┘         └───────────────┘         └───────────────┘
-
-```
-
----
-
 ## 1. Ядро Движка (`core`)
 
 *Пакет:* `net.void_.anomalies.core`
@@ -277,11 +237,11 @@ net.void_.anomalies
 * `serverTick()` и `clientTick()` — пустые реализации.
 * **Метод `inflictDamage(anomaly, target, zone, specificRange, overrideSource)`:**
 1. Проверяет жизнеспособность цели (`target.isAlive()`).
-2. Извлекает урон из `specificRange` (или фоллбэк на `defaultDamageRange`). При $damage \le 0$ прерывает выполнение.
+2. Извлекает урон из `specificRange` (или фоллбэк на `defaultDamageRange`). При `damage <= 0` прерывает выполнение.
 3. Выбирает источник урона (`overrideSource` или `defaultDamageSource`).
 4. Публикует `AnomalyDamageEvent` на `MinecraftForge.EVENT_BUS`.
 5. Если событие отменено — урон не наносится.
-6. Извлекает финальный урон через `damageEvent.getAmount()` и, если $amount > 0$, вызывает `target.hurt(sourceToUse, finalDamage)`.
+6. Извлекает финальный урон через `damageEvent.getAmount()` и, если `amount > 0`, вызывает `target.hurt(sourceToUse, finalDamage)`.
 
 * **Связи:** `AnomalyDamageEvent`, `DamageSource`, `ZoneConfig`, `MinMaxRange`, `AnomalyEntity`.
 
@@ -361,16 +321,10 @@ net.void_.anomalies
     * Извлекает список целей через `getEntitiesOfClass()`, с фильтром:
         * Отсекает игроков, для которых `AnomalyIgnoreManager.isIgnored(player) == true`.
         * Пропускает только `LivingEntity` и `ItemEntity`.
-* Расширяет хитбокс аномалии во все стороны на `expandRadius`: `getBoundingBox().inflate(expandRadius)`.
-* Извлекает список целей через `getEntitiesOfClass()`, фильтруя их по принадлежности к `LivingEntity` или `ItemEntity`.
-
 
 * **Вызов обработчика:** Последовательно передает каждую найденную сущность в `onTrigger.accept(anomaly, target)` (в лямбду-оркестратор `ZoneFactory.handleTriggerTarget`).
 
-
 * **Связи:** `AABB`, `LivingEntity`, `ItemEntity`, `Player`, `MinMaxRange`, `BiConsumer`, `AnomalyEntity`, `ZoneFactory`.
-
-
 
 ### 4.6. `SnapToGridComponent` (`components.SnapToGridComponent`)
 
@@ -383,7 +337,6 @@ net.void_.anomalies
 * x = floor(anomaly.getX()) + 0.5
 * y = floor(anomaly.getY()) (нижняя граница блока)
 * z = floor(anomaly.getZ()) + 0.5
-
 
 * Обновляет позицию сущности через `anomaly.setPos(x, y, z)`.
 * Устанавливает `isSnapped = true`, предотвращая дергание и постоянный сдвиг позиции при последующих тиках сервера.
@@ -409,7 +362,6 @@ net.void_.anomalies
 * При смене текущего режима с `MODIFY` на другой автоматически вызывает `ModifyProcessor.clearSession()` для очистки стейта в NBT.
 * Перенаправляет вызов в `AnalyzeProcessor`, `ModifyProcessor`, `RelocateProcessor` или `DeleteProcessor` в зависимости от `MultitoolMode`.
 
-
 * **Перехват ЛКМ по аномалии (`onEntityAttacked`):** В режиме `DELETE` блокирует нанесение ванильного урона и вызывает `DeleteProcessor.process()`.
 * **Перехват ЛКМ по блоку (`onLeftClickBlock`):** Если в NBT мультитула активирован захват аномалии в режиме `RELOCATE`, отменяет ломание блоков и вызывает `RelocateProcessor.onLeftClickBlock()`.
 * **Перехват ЧАТА (`onServerChat`):** Перехватывает сообщения игрока на сервере (`ServerChatEvent`). При активных режимах `MODIFY` или `RELOCATE` сообщения поглощаются (`setCanceled(true)`), а их текст передается в `onChat()` соответствующего процессора.
@@ -422,21 +374,26 @@ net.void_.anomalies
 
 #### `AnalyzeProcessor`
 
-* **Назначение:** Считывание и вывод исчерпывающей диагностической информации об аномалии в чат игрока.
+* **Назначение:** Считывание и вывод исчерпывающей диагностической информации об аномалии в чат игрока с учетом локальных NBT-оверрайдов.
 * **Технические детали:**
 * **Метод:** `process(Player player, AnomalyEntity anomaly)`.
 * Сравнивает текущие значения параметров в `customOverrides` с базовым `AnomalyDefinition` из `AnomalyReloadListener`.
 * Форматирует и выводит в системный чат игрока следующие блоки данных:
+
 1. **Идентификация:** Тип аномалии и короткий UUID (первые 8 символов).
 2. **Размеры (`width` x `height`):** Выводит текущие габариты хитбокса.
-3. **Слои зон и урон:** Перечисляет все слои `ZoneConfig` с указанием радиуса, максимального урона (`dmgAmount`) и времени горения (`fireSeconds`).
+3. **Слои зон, Урон и Физика:**
+* Считывает количество слоев из `zones_count` в NBT (если переопределено) или берет базовый размер из `def.zones()`.
+* Для каждого слоя с индексацией `#i` проверяет оверрайды NBT с приоритетом над JSON:
+* Радиус: `zone_i_radius`
+* Урон: `zone_i_damage`
+* Физика: `zone_i_pullForce` (Тяга), `zone_i_spinForce` (Вращение), `zone_i_impulseY` (ИмпульсY)
+* Горение: `fireSeconds` из JSON (если применимо).
 4. **Триггер:** Радиус обнаружения целей (`expandRadius`).
 5. **Физика:** Флаг и вектор притяжения (`pullToCenter`).
 6. **Звук и Частицы:** Громкость/высота тона звука и радиус/высота спавна частиц.
 
-
-* **Маркировка оверрайдов (`formatVal`):** Если параметр переопределен локально в NBT сущности, выводит его с выделением `§e§l[Value] §6[Override]`, иначе с подсвечиванием базового значения `§f[Value]`.
-
+* **Маркировка оверрайдов (`formatVal`):** Если конкретный параметр переопределен локально в NBT сущности, выводит его с выделением `§e§l[Value] §6[Override]`, иначе с подсвечиванием базового значения `§f[Value]`.
 
 * **Связи:** `AnomalyEntity`, `AnomalyDefinition`, `AnomalyReloadListener`, `CompoundTag`, `Component`.
 
@@ -459,36 +416,14 @@ net.void_.anomalies
 * **Режим 1: Перенос по клику (Обычный ПКМ -> ЛКМ по блоку):**
 * `onLeftClickBlock`: При клике по блоку вычисляет целевую позицию `(x + 0.5, y + 1.0, z + 0.5)`, устанавливает новые координаты сущности через `anomaly.setPos()` и стирает `SelectedAnomaly` из NBT предмета.
 
-
 * **Режим 2: Перенос по смещению (Shift + ПКМ -> Чат):**
 * Устанавливает флаг NBT `WaitingForOffset = true`.
 * `onChat`: Парсит сообщение формата `dx dy dz` (например, `0.5 0 -0.5`). Извлекает координаты `position()`, добавляет смещение, перемещает сущность и сбрасывает флаги NBT.
 
+* **Связи:** `AnomalyEntity`, `ItemStack`, `CompoundTag`, `ServerLevel`, `BlockPos`.
+
 
 ### 5.3. Предмет Мультитула и Перечисление Режимов (`item`)
-
-#### `AnomalyMultitoolItem` (`item.AnomalyMultitoolItem`)
-
-* **Класс:** `AnomalyMultitoolItem` (расширяет `net.minecraft.world.item.Item`)
-* **Назначение:** Главный инструмент администратора для диагностики, редактирования параметров, перемещения и удаления аномалий.
-* **Технические детали:**
-* **Хранение состояния:** Текущий режим сохраняется в NBT предмета по ключу `"Mode"` (`String`).
-* **Считывание и запись режима:**
-* `getMode(ItemStack stack)` — читает NBT-тег `"Mode"`. При отсутствии тега или неверном значении возвращает `MultitoolMode.ANALYZE`.
-* `setMode(ItemStack stack, MultitoolMode mode)` — записывает строковое имя режима (`mode.name()`) в NBT предмета.
-
-
-* **Переключение режима (`use`):**
-* Вызывается при **Shift + ПКМ по воздуху**.
-* На сервере переключает режим на следующий по циклу: `current.next()`.
-* **Очистка сессионных данных:** При смене режима принудительно удаляет временные NBT-ключи из предмета: `"WaitingForParams"`, `"WaitingForOffset"` и `"SelectedAnomaly"`.
-* Отправляет всплывающее сообщение в Action Bar игрока с названием и стилизованным цветом нового режима.
-
-
-* **Отображение подсказок (`appendHoverText`):** Формирует тултип предмета, выводя текущий режим, цвет, краткое описание из `MultitoolMode` и инструкцию по смене режима.
-
-
-* **Связи:** `MultitoolMode`, `CompoundTag`, `ItemStack`, `Player`.
 
 #### `MultitoolMode` (`item.MultitoolMode`)
 
@@ -506,8 +441,7 @@ net.void_.anomalies
 
 ---
 
-* **Связи:** `AnomalyEntity`, `ItemStack`, `CompoundTag`, `ServerLevel`, `BlockPos`.
-* ## 6. Клиентская Часть (`client`)
+## 6. Клиентская Часть (`client`)
 
 *Пакет:* `net.void_.anomalies.client`
 
@@ -518,7 +452,6 @@ net.void_.anomalies
 * **Технические детали:**
 * **Текстура-заглушка:** `getTextureLocation()` возвращает путь `anomalies:textures/entity/anomaly.png`.
 * **Управление видимостью (`shouldRender`):** Метод явно возвращает `true`. Это предотвращает отсечение (culling) сущности движком рендеринга Minecraft и гарантирует постоянное исполнение клиентских компонентов (`ParticleComponent`, `SoundComponent`), несмотря на отсутствие физической геометрии или полигональной модели.
-
 
 * **Связи:** `EntityRenderer`, `AnomalyEntity`, `ParticleComponent`, `SoundComponent`.
 
@@ -532,7 +465,6 @@ net.void_.anomalies
 * Помечен аннотацией `@Mod.EventBusSubscriber(modid = "anomalies", value = Dist.CLIENT, bus = Bus.MOD)`.
 * **Перехват события (`registerRenderers`):** Подписан на `EntityRenderersEvent.RegisterRenderers` на шине мода.
 * Связывает зарегистрированный тип сущности `EntityInit.ANOMALY.get()` с пустой моделью рендерера `AnomalyRenderer::new`.
-
 
 * **Связи:** `EntityRenderersEvent.RegisterRenderers`, `EntityInit`, `AnomalyRenderer`, `Dist.CLIENT`.
 
@@ -551,9 +483,8 @@ net.void_.anomalies
     * **Структура команд:**
         * `/anomaly create <type>` — Спавнит аномалию указанного типа по координатам игрока. Поддерживает динамический автокомплит типов из `AnomalyReloadListener.getKeys()`.
         * `/anomaly ignore <player> <state>` — Устанавливает статус игнорирования игрока аномалиями (`true`/`false`). Сохраняет значение через `AnomalyIgnoreManager.setIgnored()`.
-      
-* **Связи:** `CommandDispatcher`, `CommandSourceStack`, `ZoneFactory`, `AnomalyReloadListener`, `AnomalyIgnoreManager`, `AnomalyEntity`.
 
+* **Связи:** `CommandDispatcher`, `CommandSourceStack`, `ZoneFactory`, `AnomalyReloadListener`, `AnomalyIgnoreManager`, `AnomalyEntity`.
 
 ### 7.2. Инициализация Сущностей (`setup.EntityInit`)
 
