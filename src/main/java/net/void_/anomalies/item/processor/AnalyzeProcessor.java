@@ -24,15 +24,52 @@ public class AnalyzeProcessor {
         float height = overrides.contains("height") ? (float) overrides.getDouble("height") : (def != null && def.size() != null ? def.size().height() : 1.0f);
         player.sendSystemMessage(Component.literal("§e📐 Размеры: " + formatVal("width", width, overrides) + "§7x" + formatVal("height", height, overrides)));
 
-        // 2. Зоны и Урон
-        if (def != null && def.zones() != null && !def.zones().isEmpty()) {
-            player.sendSystemMessage(Component.literal("§c⚔ Слои зон и Урон:"));
-            int index = 1;
-            for (ZoneConfig zone : def.zones()) {
-                double dmg = (zone.damage() != null && zone.damage().innerAmount() != null) ? zone.damage().innerAmount().getMax() : 0.0;
-                int fire = (zone.damage() != null) ? zone.damage().fireSeconds() : 0;
-                player.sendSystemMessage(Component.literal(" §7- Зона " + index + ": §fРадиус=" + zone.radius() + " §7| Урон=" + dmg + (fire > 0 ? " §7| Огонь=" + fire + "s" : "")));
-                index++;
+        // 2. Зоны, Урон и Физика (учитывает динамические оверрайды NBT)
+        int zoneCount = overrides.contains("zones_count")
+                ? overrides.getInt("zones_count")
+                : (def != null && def.zones() != null ? def.zones().size() : 0);
+
+        if (zoneCount > 0) {
+            player.sendSystemMessage(Component.literal("§c⚔ Слои зон, Урон и Физика:"));
+            for (int i = 0; i < zoneCount; i++) {
+                ZoneConfig defaultZone = (def != null && def.zones() != null && i < def.zones().size()) ? def.zones().get(i) : null;
+
+                double radius = overrides.contains("zone_" + i + "_radius")
+                        ? overrides.getDouble("zone_" + i + "_radius")
+                        : (defaultZone != null ? defaultZone.radius() : 1.0);
+
+                double damage = overrides.contains("zone_" + i + "_damage")
+                        ? overrides.getDouble("zone_" + i + "_damage")
+                        : (defaultZone != null && defaultZone.damage() != null && defaultZone.damage().innerAmount() != null ? defaultZone.damage().innerAmount().getMax() : 0.0);
+
+                double pullForce = overrides.contains("zone_" + i + "_pullForce")
+                        ? overrides.getDouble("zone_" + i + "_pullForce")
+                        : (defaultZone != null && defaultZone.physics() != null ? defaultZone.physics().pullForce() : 0.0);
+
+                double spinForce = overrides.contains("zone_" + i + "_spinForce")
+                        ? overrides.getDouble("zone_" + i + "_spinForce")
+                        : (defaultZone != null && defaultZone.physics() != null ? defaultZone.physics().spinForce() : 0.0);
+
+                double impulseY = overrides.contains("zone_" + i + "_impulseY")
+                        ? overrides.getDouble("zone_" + i + "_impulseY")
+                        : (defaultZone != null && defaultZone.physics() != null ? defaultZone.physics().impulseY() : 0.0);
+
+                int fire = defaultZone != null && defaultZone.damage() != null ? defaultZone.damage().fireSeconds() : 0;
+
+                String rStr = formatVal("zone_" + i + "_radius", radius, overrides);
+                String dStr = formatVal("zone_" + i + "_damage", damage, overrides);
+                String pfStr = formatVal("zone_" + i + "_pullForce", pullForce, overrides);
+                String sfStr = formatVal("zone_" + i + "_spinForce", spinForce, overrides);
+                String iyStr = formatVal("zone_" + i + "_impulseY", impulseY, overrides);
+
+                player.sendSystemMessage(Component.literal(
+                        " §7- Зона #" + i + ": §7Радиус=" + rStr +
+                                " §7| Урон=" + dStr +
+                                (fire > 0 ? " §7| Огонь=" + fire + "s" : "") +
+                                " §7| Тяга=" + pfStr +
+                                " §7| Вращение=" + sfStr +
+                                " §7| ИмпульсY=" + iyStr
+                ));
             }
         }
 
@@ -52,7 +89,7 @@ public class AnalyzeProcessor {
         if (def != null && def.sound() != null) {
             float vol = overrides.contains("soundVolume") ? (float) overrides.getDouble("soundVolume") : def.sound().volume();
             float pitch = overrides.contains("soundPitch") ? (float) overrides.getDouble("soundPitch") : def.sound().pitch();
-            player.sendSystemMessage(Component.literal("§🔊 Звук: §7Громкость=" + formatVal("soundVolume", vol, overrides) + " §7| Высота=" + formatVal("soundPitch", pitch, overrides)));
+            player.sendSystemMessage(Component.literal("§f🔊 Звук: §7Громкость=" + formatVal("soundVolume", vol, overrides) + " §7| Высота=" + formatVal("soundPitch", pitch, overrides)));
         }
 
         // 6. Частицы

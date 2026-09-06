@@ -4,9 +4,9 @@ import net.minecraft.ChatFormatting;
 
 public enum MultitoolMode {
     ANALYZE("Анализ", ChatFormatting.AQUA, "ПКМ по аномалии для вывода характеристик"),
-    MODIFY("Изменение", ChatFormatting.GOLD, "ПКМ — выбор для ввода параметров в чат | Shift+ПКМ — сброс"),
+    MODIFY("Изменение", ChatFormatting.GOLD, "ПКМ — сессия редактирования (help/done) | Shift+ПКМ — полный сброс"),
     RELOCATE("Перемещение", ChatFormatting.GREEN, "ПКМ — захват | ЛКМ по блоку — перенос | Shift+ПКМ — смещение"),
-    DELETE("Удаление", ChatFormatting.RED, "ЛКМ/ПКМ по аномалии — мгновенное уничтожение");
+    DELETE("Удаление", ChatFormatting.RED, "ЛКМ по аномалии — удаление с подтверждением | Shift+ЛКМ — мгновенно");
 
     private final String name;
     private final ChatFormatting color;
