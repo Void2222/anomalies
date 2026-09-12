@@ -13,9 +13,11 @@ import net.minecraftforge.registries.DeferredRegister;
 import net.minecraftforge.registries.ForgeRegistries;
 import net.minecraftforge.registries.RegistryObject;
 import net.void_.anomalies.anomaly.loader.AnomalyReloadListener;
+import net.void_.anomalies.api.behavior.AnomalyBehaviorRegistry;
 import net.void_.anomalies.item.AnomalyMultitoolItem;
 import net.void_.anomalies.setup.AnomalyCommands;
 import net.void_.anomalies.setup.EntityInit;
+import net.void_.anomalies_examples.behavior.SmartZharkaBehavior;
 import org.slf4j.Logger;
 
 @Mod(Anomalies.MOD_ID)
@@ -40,6 +42,8 @@ public class Anomalies {
         MinecraftForge.EVENT_BUS.register(this);
 
         EntityInit.register(modEventBus);
+
+        AnomalyBehaviorRegistry.register("smart_zharka", new SmartZharkaBehavior());
     }
 
     @SubscribeEvent

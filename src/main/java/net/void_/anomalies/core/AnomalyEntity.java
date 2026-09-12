@@ -22,10 +22,13 @@ public class AnomalyEntity extends Entity {
     private float anomalyWidth = 1.0F;
     private float anomalyHeight = 1.0F;
 
-    // Хранилище кастомных переопределений (оверрайдов) для конкретной сущности
     private CompoundTag customOverrides = new CompoundTag();
 
     private static final EntityDataAccessor<String> ANOMALY_TYPE =
+            SynchedEntityData.defineId(AnomalyEntity.class, EntityDataSerializers.STRING);
+
+    // 🌟 НОВЫЙ КЛЮЧ СИНХРОНИЗАЦИИ СОСТОЯНИЯ
+    private static final EntityDataAccessor<String> CURRENT_STATE =
             SynchedEntityData.defineId(AnomalyEntity.class, EntityDataSerializers.STRING);
 
     private final List<IAnomalyComponent> components = new ArrayList<>();
@@ -38,6 +41,7 @@ public class AnomalyEntity extends Entity {
     @Override
     protected void defineSynchedData() {
         this.entityData.define(ANOMALY_TYPE, "");
+        this.entityData.define(CURRENT_STATE, "idle"); // По умолчанию всегда idle
     }
 
     public AnomalyEntity addComponent(IAnomalyComponent component) {
@@ -54,13 +58,24 @@ public class AnomalyEntity extends Entity {
         return this.entityData.get(ANOMALY_TYPE);
     }
 
+    // 🌟 УПРАВЛЕНИЕ ТЕКУЩИМ СОСТОЯНИЕМ
+    public void setCurrentState(String state) {
+        String newState = (state != null && !state.isEmpty()) ? state.toLowerCase() : "idle";
+        if (!getCurrentState().equals(newState)) {
+            this.entityData.set(CURRENT_STATE, newState);
+            rebuildComponents();
+        }
+    }
+
+    public String getCurrentState() {
+        return this.entityData.get(CURRENT_STATE);
+    }
+
     public void setAnomalyDimensions(float width, float height) {
         this.anomalyWidth = width;
         this.anomalyHeight = height;
         this.refreshDimensions();
     }
-
-    // 🌟 МЕТОДЫ ДЛЯ РАБОТЫ С ОВЕРРАЙДАМИ (NBT)
 
     public CompoundTag getCustomOverrides() {
         return this.customOverrides;
@@ -68,12 +83,9 @@ public class AnomalyEntity extends Entity {
 
     public void setCustomOverrides(CompoundTag tag) {
         this.customOverrides = tag != null ? tag.copy() : new CompoundTag();
-        rebuildComponents(); // Пересобираем компоненты при изменении оверрайдов
+        rebuildComponents();
     }
 
-    /**
-     * Записать/обновить конкретное числовое значение оверрайда (например, "impulseY", 2.0)
-     */
     public void setOverrideDouble(String key, double value) {
         this.customOverrides.putDouble(key, value);
         rebuildComponents();
@@ -82,7 +94,8 @@ public class AnomalyEntity extends Entity {
     @Override
     public void onSyncedDataUpdated(EntityDataAccessor<?> key) {
         super.onSyncedDataUpdated(key);
-        if (ANOMALY_TYPE.equals(key)) {
+        // Реакция на изменение типа ИЛИ состояния
+        if (ANOMALY_TYPE.equals(key) || CURRENT_STATE.equals(key)) {
             rebuildComponents();
         }
     }
@@ -91,12 +104,15 @@ public class AnomalyEntity extends Entity {
     public void tick() {
         super.tick();
 
+        // Создаем локальную копию списка для безопасной итерации при пересборке компонентов
+        List<IAnomalyComponent> safeComponents = new ArrayList<>(this.components);
+
         if (this.level().isClientSide) {
-            for (IAnomalyComponent component : components) {
+            for (IAnomalyComponent component : safeComponents) {
                 component.clientTick(this);
             }
         } else {
-            for (IAnomalyComponent component : components) {
+            for (IAnomalyComponent component : safeComponents) {
                 component.serverTick(this);
             }
         }
@@ -106,17 +122,18 @@ public class AnomalyEntity extends Entity {
         this.components.clear();
         String type = getAnomalyType();
         if (!type.isEmpty()) {
-            ZoneFactory.applyComponents(this, type);
+            ZoneFactory.applyComponents(this, type, getCurrentState());
         }
     }
-
-    // 🌟 СХРАНЕНИЕ И ЗАГРУЗКА NBT В МИР
 
     @Override
     protected void readAdditionalSaveData(CompoundTag tag) {
         if (tag.contains("AnomalyType")) {
-            // Загружаем тип, но не пересобираем сразу, чтобы сначала прочитать оверрайды
             this.entityData.set(ANOMALY_TYPE, tag.getString("AnomalyType"));
+        }
+
+        if (tag.contains("CurrentState")) {
+            this.entityData.set(CURRENT_STATE, tag.getString("CurrentState"));
         }
 
         if (tag.contains("CustomOverrides")) {
@@ -129,6 +146,7 @@ public class AnomalyEntity extends Entity {
     @Override
     protected void addAdditionalSaveData(CompoundTag tag) {
         tag.putString("AnomalyType", getAnomalyType());
+        tag.putString("CurrentState", getCurrentState());
         if (!this.customOverrides.isEmpty()) {
             tag.put("CustomOverrides", this.customOverrides.copy());
         }

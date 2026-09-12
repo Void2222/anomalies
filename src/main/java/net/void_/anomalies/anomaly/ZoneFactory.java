@@ -29,11 +29,19 @@ import java.util.List;
 
 public class ZoneFactory {
 
-    public static void applyComponents(AnomalyEntity anomaly, String type) {
-        AnomalyDefinition definition = AnomalyReloadListener.get(type);
+    /**
+     * Сборка и навешивание компонентов под конкретное состояние аномалии
+     */
+    public static void applyComponents(AnomalyEntity anomaly, String type, String state) {
+        AnomalyDefinition definition = AnomalyReloadListener.get(type, state);
         if (definition == null) return;
 
         anomaly.addComponent(new SnapToGridComponent());
+
+        // На сервере добавляем оркестратор состояний
+        if (!anomaly.level().isClientSide) {
+            anomaly.addComponent(new StateMachineComponent(type));
+        }
 
         CompoundTag overrides = anomaly.getCustomOverrides();
 
@@ -41,6 +49,10 @@ public class ZoneFactory {
         setupParticles(anomaly, definition.particles(), overrides);
         setupSound(anomaly, definition.sound(), overrides);
         setupTriggerAndPhysics(anomaly, definition, overrides);
+    }
+
+    public static void applyComponents(AnomalyEntity anomaly, String type) {
+        applyComponents(anomaly, type, "idle");
     }
 
     private static void setupDimensions(AnomalyEntity anomaly, SizeConfig sizeConfig, CompoundTag overrides) {
@@ -130,7 +142,6 @@ public class ZoneFactory {
     private static void handleTriggerTarget(AnomalyEntity anomaly, Entity target, ImpulseComponent impulseComp, DamageComponent damageComp, List<ZoneConfig> zones, boolean ignoreAnomalies) {
         if (ignoreAnomalies && target instanceof AnomalyEntity) return;
 
-        // 🛑 Проверка списка игнорирования игроков
         if (target instanceof Player player && AnomalyIgnoreManager.isIgnored(player)) return;
 
         if (impulseComp != null) {

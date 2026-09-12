@@ -1,0 +1,46 @@
+{
+  "size": {
+    "width": 0.5,
+    "height": 2.3
+  },
+  "particles": [
+    {
+      "type": "minecraft:flame",
+      "shape": "CYLINDER",
+      "interval": 3,
+      "radius": 0.6,
+      "height": 1.0,
+      "count": 3
+    },
+    {
+      "type": "minecraft:smoke",
+      "shape": "CYLINDER",
+      "interval": 6,
+      "radius": 0.5,
+      "height": 1.2,
+      "count": 2
+    }
+  ],
+  "sound": {
+    "event": "minecraft:block.fire.extinguish",
+    "interval": [10, 20],
+    "source": "BLOCKS",
+    "volume": 0.6,
+    "pitch": 1.4
+  },
+  "zones": [
+    {
+      "radius": 1.2,
+      "damage": {
+        "innerAmount": 1.0,
+        "fireSeconds": 2,
+        "damageType": "fire"
+      }
+    }
+  ],
+  "trigger": {
+    "expandRadius": 2.5,
+    "interval": 2
+  },
+  "ignoreOtherAnomalies": true
+}

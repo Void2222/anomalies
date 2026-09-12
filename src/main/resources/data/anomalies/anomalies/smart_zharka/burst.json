@@ -1,0 +1,58 @@
+{
+  "size": {
+    "width": 0.5,
+    "height": 2.3
+  },
+  "particles": [
+    {
+      "type": "minecraft:flame",
+      "shape": "CYLINDER",
+      "interval": 1,
+      "radius": 0.9,
+      "height": 2.5,
+      "count": 12
+    },
+    {
+      "type": "minecraft:large_smoke",
+      "shape": "CYLINDER",
+      "interval": 2,
+      "radius": 0.7,
+      "height": 2.8,
+      "count": 4
+    },
+    {
+      "type": "minecraft:lava",
+      "shape": "CYLINDER",
+      "interval": 3,
+      "radius": 0.8,
+      "height": 2.0,
+      "count": 3
+    }
+  ],
+  "sound": {
+    "event": "minecraft:entity.firework_rocket.blast",
+    "interval": [15, 30],
+    "source": "BLOCKS",
+    "volume": 1.2,
+    "pitch": 0.9
+  },
+  "zones": [
+    {
+      "radius": 2.0,
+      "damage": {
+        "innerAmount": 10.0,
+        "fireSeconds": 8,
+        "damageType": "fire"
+      }
+    }
+  ],
+  "physics": {
+    "impulseY": 0.15,
+    "pullToCenter": false
+  },
+  "trigger": {
+    "expandRadius": 2.5,
+    "interval": 1
+  },
+  "ignoreOtherAnomalies": true
+}

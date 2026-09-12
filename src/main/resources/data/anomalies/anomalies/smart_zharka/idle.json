@@ -1,0 +1,28 @@
+{
+  "size": {
+    "width": 0.5,
+    "height": 2.3
+  },
+  "particles": [
+    {
+      "type": "minecraft:smoke",
+      "shape": "CYLINDER",
+      "interval": 12,
+      "radius": 0.4,
+      "height": 0.5,
+      "count": 1
+    }
+  ],
+  "sound": {
+    "event": "minecraft:block.fire.ambient",
+    "interval": [40, 80],
+    "source": "BLOCKS",
+    "volume": 0.3,
+    "pitch": 0.8
+  },
+  "trigger": {
+    "expandRadius": 2.5,
+    "interval": 5
+  },
+  "ignoreOtherAnomalies": true
+}

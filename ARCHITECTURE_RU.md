@@ -21,15 +21,16 @@
 
 ```text
 net.void_.anomalies
-├── api/          # Публичный Extension API (Forge Events)
+├── api/          # Публичный Extension API
+│   ├── behavior/ # Интерфейсы и реестр стейт-машины (IAnomalyStateBehavior)
 │   └── event/    # Перехватываемые события триггеров, урона, физики и зон
 ├── anomaly/      # Data-driven слой, фабрика сборки и загрузчик JSON
 │   ├── data/     # Immutable Record-классы конфигурации
-│   ├── loader/   # Datapack Reload Listeners
+│   ├── loader/   # Datapack Reload Listeners (мультифазовая загрузка)
 │   └── util/     # Математические утилиты расчета зон и оверрайдов
 ├── client/       # Клиентская часть (Рендереры, клиентские эвенты)
-├── components/   # Реализации компонентов поведения (ECS)
-├── config/       # Конфигурационные менеджеры и хранилища данных (JSON/Forge Config)
+├── components/   # Реализации компонентов поведения (ECS + StateMachineComponent)
+├── config/       # Конфигурационные менеджеры и хранилища данных
 ├── core/         # Ядро движка (Entity, Component Interface)
 ├── item/         # Мультитул и процессоры управления (Strategy Pattern)
 │   └── processor/# Процессоры режимов (Analyze, Modify, Relocate, Delete)
@@ -45,25 +46,30 @@ net.void_.anomalies
 ### 1.1. Runtime-Контейнер Сущности (`core.AnomalyEntity`)
 
 * **Класс:** `AnomalyEntity` (расширяет `net.minecraft.world.entity.Entity`)
-* **Назначение:** Базовая сущность аномалии в мире. Выступает точкой привязки в пространстве, контейнером для компонентов `IAnomalyComponent` и хранителем состояния оверрайдов.
+* **Назначение:** Базовая сущность аномалии в мире. Выступает точкой привязки в пространстве, контейнером для компонентов `IAnomalyComponent` и хранителем стейт-машины и оверрайдов.
 * **Технические детали:**
 * **Свойства в конструкторе:** `noPhysics = true`.
 * **Флаги переопределения:** `isPickable() = true`, `isInvulnerable() = true`, `canBeCollidedWith() = false`.
-* **Синхронизация:** `ANOMALY_TYPE` (`SynchedEntityData.defineId(AnomalyEntity.class, EntityDataSerializers.STRING)`). При вызове `onSyncedDataUpdated()` на клиенте авто-вызывается `rebuildComponents()`.
-* **Размеры сущности:** По умолчанию `1.0F x 1.0F`. Метод `setAnomalyDimensions(width, height)` вызивает `refreshDimensions()`. Динамический хитбокс возвращается через `getDimensions(Pose pose) -> EntityDimensions.scalable(width, height)`.
+
+* **Синхронизация (SynchedEntityData):**
+* `ANOMALY_TYPE` (`String`) — базовый тип аномалии.
+* `CURRENT_STATE` (`String`) — активная фаза (по умолчанию `"idle"`).
+* При вызове `onSyncedDataUpdated()` на клиенте авто-вызывается `rebuildComponents()`, чтобы визуал и звук моментально подстроились под новую фазу.
+* **Размеры сущности:** По умолчанию `1.0F x 1.0F`. Метод `setAnomalyDimensions(width, height)` вызывает `refreshDimensions()`. Динамический хитбокс возвращается через `getDimensions(Pose pose) -> EntityDimensions.scalable(width, height)`.
+
 * **Структура NBT в сохранении мира:**
 * `"AnomalyType"` (`String`) — идентификатор шаблона аномалии.
+* `"CurrentState"` (`String`) — текущая фаза жизненного цикла.
 * `"CustomOverrides"` (`CompoundTag`) — NBT-тег локальных переопределений параметров.
 
 * **Управление NBT-оверрайдами:**
 * `getCustomOverrides()` / `setCustomOverrides(CompoundTag tag)` — возвращает или полностью подменяет тег с вызовом `rebuildComponents()`.
-* `setOverrideDouble(String key, double value)` — записывает значение и сразу пересобирает компоненты.
 
 * **Исполнение тика (`tick()`):**
 * На клиенте (`level().isClientSide`): итеративно вызывает `component.clientTick(this)`.
 * На сервере: итеративно вызывает `component.serverTick(this)`.
 
-* **Пересборка (`rebuildComponents()`):** Очищает `components.clear()` и, если `getAnomalyType()` не пуст, вызывает `ZoneFactory.applyComponents(this, type)`.
+* **Пересборка (`rebuildComponents()`):** Очищает `components.clear()` и вызывает `ZoneFactory.applyComponents(this, type, state)` для динамической подмены логики на лету.
 * **Спавн-пакет:** `getAddEntityPacket()` возвращает `NetworkHooks.getEntitySpawningPacket(this)`.
 
 * **Связи:** `ZoneFactory`, `IAnomalyComponent`, `CompoundTag`, `NetworkHooks`, `SynchedEntityData`.
@@ -104,32 +110,32 @@ net.void_.anomalies
 
 * **Класс:** `ZoneFactory`
 * **Назначение:** Composition Root. Настраивает геометрию, визуализацию, звук и логику взаимодействия сущности при скрещивании `AnomalyDefinition` (JSON) и `customOverrides` (NBT).
+
 * **Технические детали:**
 * `create(Level, x, y, z, type)` — проверяет существование `type` в `AnomalyReloadListener`, инстанцирует сущность через `EntityInit.ANOMALY.get().create(level)` и устанавливает стартовый тип.
-* `applyComponents(AnomalyEntity anomaly, String type)`:
+
+* **Метод `applyComponents(AnomalyEntity anomaly, String type, String state)`:**
 1. Всегда добавляет `SnapToGridComponent`.
-2. Извлекает `customOverrides` через `anomaly.getCustomOverrides()`.
-3. `setupDimensions()`: вызывает `OverrideHelper.getDimensions()` и обновляет габариты.
-4. `setupParticles()`: парсит `ParticleConfig`, считывает NBT-ключи `particleRadius`, `particleHeight`, регистрирует партиклы через `BuiltInRegistries.PARTICLE_TYPE`. Парсит `ParticleComponent.Shape` через `valueOf()` с фоллбэком на `SPHERE`.
-5. `setupSound()`: считывает NBT-ключи `soundVolume`, `soundPitch`, парсит `SoundSource` через `valueOf()` с фоллбэком на `BLOCKS`.
-6. `setupTriggerAndPhysics()`:
-* Создает базовый `DamageComponent` с диапазоном `MinMaxRange(0, 0)` и дефолтным `damageSources().generic()`.
-* Если список зон не пуст — сортирует зоны и инстанцирует `ImpulseComponent`.
-* Добавляет `TriggerComponent`, передавая в него лямбду `handleTriggerTarget`.
+2. На сервере **всегда** добавляет `StateMachineComponent` (оркестратор фаз аномалии).
+3. Извлекает `AnomalyDefinition` для конкретной фазы (`state`) из `AnomalyReloadListener.get(type, state)`.
+4. Извлекает `customOverrides` через `anomaly.getCustomOverrides()` (имеют высший приоритет над параметрами фазы).
+5. `setupDimensions()`: вызывает `OverrideHelper.getDimensions()` и обновляет габариты.
+6. `setupParticles()` и `setupSound()`: настраивают визуал и аудио под конфигурацию текущей фазы.
+7. `setupTriggerAndPhysics()`: собирает `DamageComponent`, `ImpulseComponent` и `TriggerComponent` на основе зон текущего состояния.
 
 * **Логика `handleTriggerTarget`:**
-    1. Если `ignoreOtherAnomalies == true` и `target instanceof AnomalyEntity` — обработка прерывается.
-    2. Если `target instanceof Player player` и `AnomalyIgnoreManager.isIgnored(player)` — обработка прерывается (игрок игнорируется аномалией).
-    3. Вызывает `impulseComp.applyImpulse(anomaly, target)`.
-    4. Определяет активную зону цели через `ZoneUtils.getActiveZone()`. Если `activeZone == null` — прерывает обработку.
-    5. Если `target instanceof ItemEntity itemEntity` — публикует `AnomalyItemInteractEvent`.
-    6. Для остальных сущностей публикует `AnomalyTriggerEvent`. При отмене события — прерывается.
-    7. Если `activeZone.damage()` задан:
-        * Накладывает поджигание: `target.setSecondsOnFire(fireSeconds)`.
-        * Определяет источник урона через `getDamageSource()`.
-        * Наносит урон через `damageComp.inflictDamage()`.
+1. Если `ignoreOtherAnomalies == true` и `target instanceof AnomalyEntity` — обработка прерывается.
+2. Если `target instanceof Player player` и `AnomalyIgnoreManager.isIgnored(player)` — обработка прерывается (игрок игнорируется аномалией).
+3. Вызывает `impulseComp.applyImpulse(anomaly, target)`.
+4. Определяет активную зону цели через `ZoneUtils.getActiveZone()`. Если `activeZone == null` — прерывает обработку.
+5. Если `target instanceof ItemEntity itemEntity` — публикует `AnomalyItemInteractEvent`.
+6. Для остальных сущностей публикует `AnomalyTriggerEvent`. При отмене события — прерывается.
+7. Если `activeZone.damage()` задан:
+* Накладывает поджигание: `target.setSecondsOnFire(fireSeconds)`.
+* Определяет источник урона через `getDamageSource()`.
+* Наносит урон через `damageComp.inflictDamage()`.
 
-* **Связи:** `AnomalyEntity`, `AnomalyReloadListener`, `OverrideHelper`, `ZoneUtils`, `ImpulseComponent`, `DamageComponent`, `TriggerComponent`, `ParticleComponent`, `SoundComponent`, `EntityInit`.
+* **Связи:** `AnomalyEntity`, `AnomalyReloadListener`, `OverrideHelper`, `ZoneUtils`, `ImpulseComponent`, `DamageComponent`, `TriggerComponent`, `ParticleComponent`, `SoundComponent`, `StateMachineComponent`, `EntityInit`.
 
 ---
 
@@ -189,20 +195,18 @@ net.void_.anomalies
 
 #### `AnomalyReloadListener` (`anomaly.loader`)
 
-* **Назначение:** Datapack-загрузчик шаблонов аномалий из JSON-файлов по пути `data/<mod_id>/anomalies/*.json`.
+* **Назначение:** Datapack-загрузчик шаблонов аномалий и их состояний из JSON-файлов по пути `data/<mod_id>/anomalies/`.
 * **Технические детали:**
 * Наследует `SimpleJsonResourceReloadListener`.
-* **Настройка GSON:** Создается через `GsonBuilder` с включенным режимом `.setLenient()` и зарегистрированным кастомным адаптером `MinMaxRange.Deserializer`.
-* **Статический реестр:** `Map<String, AnomalyDefinition> REGISTRY`.
+* **Статический реестр:** Вложенная карта `Map<String, AnomalyDefinition Map<String,>> REGISTRY` (Тип -> Состояние -> Конфиг).
 * **Загрузка датапаков (`apply`):**
-1. Очищает текущий реестр: `REGISTRY.clear()`.
-2. Парсит JSON-ресурсы в `AnomalyDefinition`.
-3. Регистрирует ключ строго по чистому нижнему регистру пути: `location.getPath().toLowerCase()` (например, ключ `"zharka"` вместо `"anomalies:zharka"`).
+1. Парсит структуру папок. Файлы вида `anomalies/zharka/idle.json` ложатся по ключам `zharka` -> `idle`.
+2. **Фоллбэк для легаси:** Если найден файл `anomalies/zharka.json` (без подпапки), он автоматически регистрируется как состояние `idle` для типа `zharka`. Старые датапаки не ломаются.
 
 * **Публичный интерфейс:**
-* `get(String type)` — считывает `AnomalyDefinition` из реестра по имени типа (приводя запрос к lowerCase).
-* `getKeys()` — возвращает `Set<String>` всех зарегистрированных типов (используется для автокомплита в командах).
-* `exists(String type)` — проверяет наличие ключа аномалии в реестре.
+* `get(String type, String state)` — считывает `AnomalyDefinition` для конкретной фазы.
+* `getStates(String type)` — возвращает набор загруженных состояний для аномалии.
+* `getKeys()` — возвращает `Set<String>` всех зарегистрированных типов (для автокомплита).
 
 * **Связи:** `SimpleJsonResourceReloadListener`, `AnomalyDefinition`, `MinMaxRange`, `Gson`, `ResourceLocation`.
 
@@ -218,6 +222,27 @@ net.void_.anomalies
 * **`AnomalyPhysicsEvent`**: Вызывается перед применением вектора притяжения/выталкивания. Позволяет отменить физику или изменить вектор через `setDeltaMovement(Vec3)`.
 * **`AnomalyItemInteractEvent`**: Вызывается при попадании `ItemEntity` в область аномалии. Позволяет отменить ванильную реакцию аномалии на выпадающие предметы.
 * **`AnomalyZoneTransitionEvent`**: Вызывается при пересечении сущностью границы между зонами. Предоставляет методы `isEntering()` и `isLeaving()`. Позволяет заблокировать реакцию на смену зоны.
+
+---
+
+### 3.1. Логика Состояний (Behavior API) (`api.behavior`)
+
+* **Интерфейс:** `IAnomalyStateBehavior`
+* **Назначение:** Java-контракт для реализации программной логики переключения состояний аномалии.
+* **Методы:**
+* `default void onEnter(AnomalyEntity anomaly)` — вызов при активации состояния.
+* `default String onTick(AnomalyEntity anomaly, int ticksInState)` — исполняется каждый тик. Возвращает имя следующего состояния для перехода или `null`, если смена не требуется.
+* `default void onExit(AnomalyEntity anomaly)` — деструктор/очистка при выходе из состояния.
+
+* **Реестр:** `AnomalyBehaviorRegistry`
+* **Назначение:** Центральное хранилище ассоциаций типов аномалий с их Java-поведениями.
+* **Технические детали:**
+* `Map<String, IAnomalyStateBehavior> BEHAVIORS`
+* `register(String type, IAnomalyStateBehavior behavior)` — привязка логики к типу.
+* `get(String type)` — возвращает привязанное поведение или `DefaultBehavior` (возвращает `null` на `onTick`), если логика не задана.
+
+* *Архитектурное примечание:* Текущая регистрация через вызов в Java является временным решением до внедрения data-driven поведения.
+
 ---
 
 ## 4. Компоненты Поведения (`components`)
@@ -343,6 +368,30 @@ net.void_.anomalies
 
 * **Связи:** `AnomalyEntity`, `IAnomalyComponent`.
 
+### 4.7. `StateMachineComponent` (`components.StateMachineComponent`)
+
+* **Класс:** `StateMachineComponent` (имплементирует `IAnomalyComponent`)
+
+* **Назначение:** Серверный компонент-оркестратор жизненного цикла аномалии. Управляет вызовом `IAnomalyStateBehavior` и переключением фаз.
+
+* **Технические детали:**
+* **Поля:** `ticksInState` (счетчик времени пребывания в текущей фазе).
+* **Серверный тик (`serverTick`):**
+1. Увеличивает `ticksInState`.
+2. Извлекает текущую фазу `currentState = anomaly.getCurrentState()`.
+3. Запрашивает поведение через `AnomalyBehaviorRegistry.get(anomaly.getAnomalyType())`.
+4. Вызывает `String nextState = behavior.onTick(anomaly, ticksInState)`.
+5. Если `nextState != null` и не равно `currentState`, запускает переключение фазы:
+* Вызывает `behavior.onExit(anomaly)`.
+* Записывает новое состояние в сущность через `anomaly.setCurrentState(nextState)`.
+* Вызывает `anomaly.rebuildComponents()` для обновления физики, звука и частиц под новый JSON-конфиг.
+* Сбрасывает `ticksInState = 0`.
+* Вызывает `behavior.onEnter(anomaly)`.
+
+* **Связи:** `AnomalyEntity`, `IAnomalyStateBehavior`, `AnomalyBehaviorRegistry`, `ZoneFactory`.
+
+---
+
 ## 5. Система Управления и Мультитул (`item`)
 
 *Пакет:* `net.void_.anomalies.item`
@@ -374,26 +423,19 @@ net.void_.anomalies
 
 #### `AnalyzeProcessor`
 
-* **Назначение:** Считывание и вывод исчерпывающей диагностической информации об аномалии в чат игрока с учетом локальных NBT-оверрайдов.
+* **Назначение:** Диагностический сканер-рентген. Считывает и выводит полную структуру параметров аномалии по всем её зарегистрированным фазам из датапаков с учетом NBT-оверрайдов.
 * **Технические детали:**
 * **Метод:** `process(Player player, AnomalyEntity anomaly)`.
-* Сравнивает текущие значения параметров в `customOverrides` с базовым `AnomalyDefinition` из `AnomalyReloadListener`.
-* Форматирует и выводит в системный чат игрока следующие блоки данных:
+* Выводит заголовок с типом аномалии, короткой формой UUID и текущей активной фазой (`currentState`).
+* **Проверка оверрайдов:** Если `customOverrides` не пуст, выводит предупреждение о наличии локальных NBT-блокировок.
 
-1. **Идентификация:** Тип аномалии и короткий UUID (первые 8 символов).
-2. **Размеры (`width` x `height`):** Выводит текущие габариты хитбокса.
-3. **Слои зон, Урон и Физика:**
-* Считывает количество слоев из `zones_count` в NBT (если переопределено) или берет базовый размер из `def.zones()`.
-* Для каждого слоя с индексацией `#i` проверяет оверрайды NBT с приоритетом над JSON:
-* Радиус: `zone_i_radius`
-* Урон: `zone_i_damage`
-* Физика: `zone_i_pullForce` (Тяга), `zone_i_spinForce` (Вращение), `zone_i_impulseY` (ИмпульсY)
-* Горение: `fireSeconds` из JSON (если применимо).
-4. **Триггер:** Радиус обнаружения целей (`expandRadius`).
-5. **Физика:** Флаг и вектор притяжения (`pullToCenter`).
-6. **Звук и Частицы:** Громкость/высота тона звука и радиус/высота спавна частиц.
-
-* **Маркировка оверрайдов (`formatVal`):** Если конкретный параметр переопределен локально в NBT сущности, выводит его с выделением `§e§l[Value] §6[Override]`, иначе с подсвечиванием базового значения `§f[Value]`.
+* **Итерация по фазам:** Считывает все фазы типа через `AnomalyReloadListener.getStates(type)`. Для каждого состояния выводит его статус (`[ТЕКУЩАЯ ФАЗА]` или `[ИНАКТИВНА]`) и разворачивает 5 блоков конфигурации:
+1. **Размеры (`width` x `height`)**.
+2. **Слои зон:** Количество зон, радиусы, урон, силы тяги (`pullForce`), вращения (`spinForce`) и вертикального импульса (`impulseY`).
+3. **Зона триггера:** Радиус активации (`expandRadius`).
+4. **Звук:** Идентификатор события, громкость (`volume`) и pitch.
+5. **Частицы:** Тип частиц, радиус и высота спавна.
+* **Форматирование оверрайдов (`formatVal`):** Если параметр присутствует в `customOverrides`, значение выводится цветом с пометкой `§e§l[Value] §6[NBT]`, иначе отображается стандартное значение из JSON (`§f[Value]`).
 
 * **Связи:** `AnomalyEntity`, `AnomalyDefinition`, `AnomalyReloadListener`, `CompoundTag`, `Component`.
 
@@ -483,6 +525,7 @@ net.void_.anomalies
     * **Структура команд:**
         * `/anomaly create <type>` — Спавнит аномалию указанного типа по координатам игрока. Поддерживает динамический автокомплит типов из `AnomalyReloadListener.getKeys()`.
         * `/anomaly ignore <player> <state>` — Устанавливает статус игнорирования игрока аномалиями (`true`/`false`). Сохраняет значение через `AnomalyIgnoreManager.setIgnored()`.
+        * `/anomaly state set <state>` — принудительно переключает фазу аномалии (через которую проходит луч зрения) для тестирования переходов и визуальных эффектов в реальном времени. Автокомплит фаз подтягивается динамически.
 
 * **Связи:** `CommandDispatcher`, `CommandSourceStack`, `ZoneFactory`, `AnomalyReloadListener`, `AnomalyIgnoreManager`, `AnomalyEntity`.
 
