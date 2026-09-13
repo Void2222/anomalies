@@ -176,4 +176,14 @@ public class AnomalyEntity extends Entity {
     public EntityDimensions getDimensions(Pose pose) {
         return EntityDimensions.scalable(this.anomalyWidth, this.anomalyHeight);
     }
+
+    @SuppressWarnings("unchecked")
+    public <T extends IAnomalyComponent> T getComponent(Class<T> type) {
+        for (IAnomalyComponent component : this.components) {
+            if (type.isInstance(component)) {
+                return (T) component;
+            }
+        }
+        return null;
+    }
 }

@@ -4,6 +4,7 @@ import net.void_.anomalies.api.behavior.AnomalyBehaviorRegistry;
 import net.void_.anomalies.api.behavior.IAnomalyStateBehavior;
 import net.void_.anomalies.core.AnomalyEntity;
 import net.void_.anomalies.core.IAnomalyComponent;
+import net.void_.anomalies.dsl.registry.AnomalyScriptRegistry;
 
 public class StateMachineComponent implements IAnomalyComponent {
 
@@ -12,7 +13,10 @@ public class StateMachineComponent implements IAnomalyComponent {
     private boolean initialized = false;
 
     public StateMachineComponent(String anomalyType) {
-        this.behavior = AnomalyBehaviorRegistry.get(anomalyType);
+        // Приоритет DSL-скриптам: если есть скрипт в реестре, берем его. Если нет — падаем на старый Java Registry.
+        this.behavior = AnomalyScriptRegistry.get(anomalyType)
+                .map(script -> (IAnomalyStateBehavior) script)
+                .orElseGet(() -> AnomalyBehaviorRegistry.get(anomalyType));
     }
 
     @Override
@@ -25,13 +29,12 @@ public class StateMachineComponent implements IAnomalyComponent {
 
         ticksInState++;
 
-        // Вызов Java-логики с передачей количества тиков в текущем состоянии
+        // Вызов DSL-логики переходов с передачей тиков
         String nextState = behavior.onTick(anomaly, ticksInState);
 
-        // Если логика вернула новое состояние, отличающееся от текущего
+        // Переключение состояния при возврате имени следующей фазы
         if (nextState != null && !nextState.equalsIgnoreCase(anomaly.getCurrentState())) {
             behavior.onExit(anomaly);
-            // Переключение состояния провоцирует rebuildComponents()
             anomaly.setCurrentState(nextState);
         }
     }

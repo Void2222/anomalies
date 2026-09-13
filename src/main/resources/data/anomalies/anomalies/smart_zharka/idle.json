@@ -20,9 +20,11 @@
     "volume": 0.3,
     "pitch": 0.8
   },
-  "trigger": {
-    "expandRadius": 2.5,
-    "interval": 5
-  },
+  "zones": [
+    {
+      "radius": 0.5
+    }
+  ],
+
   "ignoreOtherAnomalies": true
 }

@@ -1,0 +1,22 @@
+state idle --> "smart_zharka/idle.json";
+state warmup --> "smart_zharka/warmup.json";
+state burst --> "smart_zharka/burst.json";
+state cooldown --> "smart_zharka/cooldown.json";
+
+initial = idle;
+
+state idle {
+    when player.in_zone("0") -> warmup;
+}
+
+state warmup {
+    when timer(20) -> burst;
+}
+
+state burst {
+    when timer(30) -> cooldown;
+}
+
+state cooldown {
+    when timer(60) -> idle;
+}
