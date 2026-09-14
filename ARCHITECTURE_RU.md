@@ -118,33 +118,37 @@ net.void_.anomalies
 ### 2.1. Фабрика Сборки (`anomaly.ZoneFactory`)
 
 * **Класс:** `ZoneFactory`
-* **Назначение:** Composition Root. Настраивает геометрию, визуализацию, звук и логику взаимодействия сущности при скрещивании `AnomalyDefinition` (JSON) и `customOverrides` (NBT).
-
+* **Назначение:** Composition Root. Фабричный класс, отвечающий за сборку, инстанцирование и dynamic-rebuild всех физических, визуальных и логических компонентов аномалии при объединении данных JSON-конфигураций (`AnomalyDefinition`) и NBT-оверрайдов (`customOverrides`).
 * **Технические детали:**
-* `create(Level, x, y, z, type)` — проверяет существование `type` в `AnomalyReloadListener`, инстанцирует сущность через `EntityInit.ANOMALY.get().create(level)` и устанавливает стартовый тип.
-
+* **Создание сущности (`create`):** Проверяет наличие `type` в `AnomalyReloadListener`, создаёт `AnomalyEntity` через `EntityInit.ANOMALY.get().create(level)`, выставляет координаты и регистронезависимый тип.
 * **Метод `applyComponents(AnomalyEntity anomaly, String type, String state)`:**
 1. Всегда добавляет `SnapToGridComponent`.
-2. На сервере **всегда** добавляет `StateMachineComponent` (оркестратор фаз аномалии).
-3. Извлекает `AnomalyDefinition` для конкретной фазы (`state`) из `AnomalyReloadListener.get(type, state)`.
-4. Извлекает `customOverrides` через `anomaly.getCustomOverrides()` (имеют высший приоритет над параметрами фазы).
-5. `setupDimensions()`: вызывает `OverrideHelper.getDimensions()` и обновляет габариты.
-6. `setupParticles()` и `setupSound()`: настраивают визуал и аудио под конфигурацию текущей фазы.
-7. `setupTriggerAndPhysics()`: собирает `DamageComponent`, `ImpulseComponent` и `TriggerComponent` на основе зон текущего состояния.
+2. На серверной стороне **всегда** навешивает `StateMachineComponent` (оркестратор фазовых переходов).
+3. Запрашивает `AnomalyDefinition` для текущей фазы (`state`) из `AnomalyReloadListener.get(type, state)`.
+4. Получает NBT-оверрайды `anomaly.getCustomOverrides()` (имеют приоритет над свойствами JSON).
+5. `setupDimensions()`: считывает габариты через `OverrideHelper.getDimensions()` и обновляет размеры хитбокса.
+6. `setupParticles()`: парсит и навешивает `ParticleComponent` для каждой конфигурации частицы (с поддержкой LOD и мгновенного спавна).
+7. `setupSound()`: конструирует `SoundComponent` под выбранный источник звука (`SoundSource`) и регистрирует звуковой ивент.
+8. `setupTriggerAndPhysics()`: настраивает компоненты урона, физики и области обнаружения.
 
-* **Логика `handleTriggerTarget`:**
-1. Если `ignoreOtherAnomalies == true` и `target instanceof AnomalyEntity` — обработка прерывается.
-2. Если `target instanceof Player player` и `AnomalyIgnoreManager.isIgnored(player)` — обработка прерывается (игрок игнорируется аномалией).
-3. Вызывает `impulseComp.applyImpulse(anomaly, target)`.
-4. Определяет активную зону цели через `ZoneUtils.getActiveZone()`. Если `activeZone == null` — прерывает обработку.
-5. Если `target instanceof ItemEntity itemEntity` — публикует `AnomalyItemInteractEvent`.
-6. Для остальных сущностей публикует `AnomalyTriggerEvent`. При отмене события — прерывается.
-7. Если `activeZone.damage()` задан:
-* Накладывает поджигание: `target.setSecondsOnFire(fireSeconds)`.
-* Определяет источник урона через `getDamageSource()`.
+* **Динамическая настройка физики и триггера (`setupTriggerAndPhysics`):**
+* **Авторасчет радиуса сканирования:** Вычисляет `expandRadius` как максимальный радиус среди всех зон (`ZoneConfig::radius`) с фоллбеком на NBT-оверрайд `expandRadius`.
+* **Отзывчивый сканер:** Автоматически создает `TriggerComponent` с интервалом проверки `(1, 1)` тиков для мгновенной реакции на вход/выход сущностей.
+* **Физика (`ImpulseComponent`):** Создается и навешивается только если список зон не пуст (`!zones.isEmpty()`).
+
+* **Логика обработки целей (`handleTriggerTarget`):**
+1. Проверяет флаг `ignoreOtherAnomalies == true` для сущностей класса `AnomalyEntity`.
+2. Проверяет регистрацию игрока в `AnomalyIgnoreManager.isIgnored(player)`.
+3. При наличии `impulseComp` исполняет `impulseComp.applyImpulse(anomaly, target)`.
+4. Определяет текущую зону через `ZoneUtils.getActiveZone()`. Если `activeZone == null` — прекращает обработку.
+5. Для предметов (`ItemEntity`) публикует `AnomalyItemInteractEvent`.
+6. Для остальных сущностей публикует `AnomalyTriggerEvent` (с прерыванием при отмене).
+7. При наличии параметров урона (`activeZone.damage() != null`):
+* Применяет эффект поджога `target.setSecondsOnFire(fireSeconds)`.
+* Вычисляет источник урона `getDamageSource()` (`fire`, `lightning`, `magic`, `generic`).
 * Наносит урон через `damageComp.inflictDamage()`.
 
-* **Связи:** `AnomalyEntity`, `AnomalyReloadListener`, `OverrideHelper`, `ZoneUtils`, `ImpulseComponent`, `DamageComponent`, `TriggerComponent`, `ParticleComponent`, `SoundComponent`, `StateMachineComponent`, `EntityInit`.
+* **Связи:** `AnomalyEntity`, `AnomalyReloadListener`, `OverrideHelper`, `ZoneUtils`, `ImpulseComponent`, `DamageComponent`, `TriggerComponent`, `ParticleComponent`, `SoundComponent`, `StateMachineComponent`, `EntityInit`, `AnomalyIgnoreManager`.
 
 ---
 
@@ -279,49 +283,55 @@ net.void_.anomalies
 
 * **Связи:** `AnomalyDamageEvent`, `DamageSource`, `ZoneConfig`, `MinMaxRange`, `AnomalyEntity`.
 
+
 ---
 
 ### 4.2. `ImpulseComponent` (`components.ImpulseComponent`)
 
 * **Класс:** `ImpulseComponent` (имплементирует `IAnomalyComponent`)
-* **Назначение:** Физический движок расчета притяжения, выталкивания, вращения и отслеживания смены зон.
+* **Назначение:** Физический движок расчета притяжения, выталкивания, тангенциального вращения и непрерывного отслеживания смены зон сущностями.
 * **Технические детали:**
-* **Конструктор:** Автоматически сортирует передаваемый список зон по возрастанию радиуса: `zones.stream().sorted(Comparator.comparingDouble(ZoneConfig::radius)).toList()`.
-* **Отслеживание зон:** `Map<UUID, ZoneConfig> entityZones`.
-* **Таймер очистки (`serverTick`):** Каждые 20 тиков (`cleanupTimer >= 20`) вызывает `cleanupStaleEntities()`. Проверяет сущности из `entityZones` через `serverLevel.getEntity(uuid)`. Если сущность умерла, удалена или вышла из всех зон — удаляет из карты и публикует `AnomalyZoneTransitionEvent` с `newZone = null`.
+* **Конструктор:** Автоматически сортирует передаваемый список зон по возрастанию радиуса (`zones.stream().sorted(Comparator.comparingDouble(ZoneConfig::radius)).toList()`) либо инициализирует пустой список при `null`.
+* **Отслеживание зон:** `Map<UUID, ZoneConfig> entityZones` хранит последнюю зафиксированную зону для каждой сущности.
+* **Непрерывная очистка (`serverTick`):** В каждом серверном тике без искусственных задержек вызывает `cleanupStaleEntities(anomaly)`. Метод итерируется по `entityZones`:
+* Если сущность не найдена (`target == null`), умерла (`!target.isAlive()`), перешла в другой измерение/уровень (`target.level() != anomaly.level()`) или вышла из всех зон (`currentZone == null`), она удаляется из карты.
+* Для еще живых сущностей, покинувших область аномалии, публикуется `AnomalyZoneTransitionEvent` с `newZone = null`.
+
+* **Сравнение зон (`isSameZone`):** Сравнение зон выполняет проверку по равенству их радиусов с погрешностью `Math.abs(a.radius() - b.radius()) < 0.0001` (защита от несовпадающих ссылок при пересоздании объектовых экземпляров `ZoneConfig`).
 * **Метод `applyImpulse(anomaly, target, precalculatedZone)`:**
-1. Проверяет смену текущей зоны цели относительно `entityZones.get(targetUuid)`.
-2. При изменении зоны публикует `AnomalyZoneTransitionEvent`. Если событие отменено — прерывает расчет физики.
-3. Извлекает конфигурацию `PhysicsConfig` (из `currentZone.physics()` или дефолтную `generalPhysics`).
+1. **Определение зоны:** Берет `precalculatedZone` или вычисляет актуальную зону через `ZoneUtils.getActiveZone(zones, anomaly, target)`.
+2. **Переход между зонами:** При изменении зоны относительно `entityZones` публикует `AnomalyZoneTransitionEvent`. Если событие отменено — расчет физики прерывается. При успешном событии обновляет или удаляет запись в `entityZones`.
+3. **Конфигурация:** Извлекает `PhysicsConfig` из `currentZone.physics()` с фоллбеком на `generalPhysics` и дефолтные значения (`pullForce = 0.05`, `spinForce = 0.0`, `impulseY`).
 4. **Расчет вектора притяжения (`pullToCenter == true`):**
-* Центр аномалии: (ax, ay + height * 0.5, az)
-* Вектор до цели: (dx, dy, dz)
-* Нормализация направления с использованием единственного `Math.sqrt(distSq)`
-* **Тангенциальное вращение (Spin Force):** Применяется **только** если аномалия имеет более 1 зоны (`zones.size() > 1`) и цель находится в самой внутренней зоне (`currentZone == zones.get(0)`)
-* Формула близости: closeness = max(0.0, 1.0 - (dist / radius))
-* Сила вращения: aggressiveSpin = spinForce * (1.5 + closeness * 3.0)
-* Перпендикулярный вектор вращения: (-dirZ * aggressiveSpin, dirX * aggressiveSpin)
-* **Ограничение скорости:** Если moveX² + moveZ² > 1.0, горизонтальный вектор нормализуется до ровно 1.0 блока/тик
-5. **Расчет отталкивания (`pullToCenter == false`):** Добавляет фиксированные `impulseX`, `impulseY`, `impulseZ`.
-6. **Событие:** Публикует `AnomalyPhysicsEvent` с результирующим `Vec3`. Если не отменено — применяет вектор через `target.setDeltaMovement()` и устанавливает `target.hurtMarked = true`.
+* Вычисляет центр аномалии `(ax, ay + bbHeight * 0.5, az)` и вектор до цели `(dx, dy, dz)`.
+* Использует инвертированный квадратный корень `invDist = 1.0 / Math.sqrt(distSq)` для оптимизации нормализации направления.
+* **Тангенциальное вращение (Spin Force):** Применяется при `zones.size() > 1` для самой внутренней зоны (`isSameZone(currentZone, zones.get(0))`). Вычисляет коэффициенты близости `closenessFactor = max(0.0, 1.0 - (dist / radius))` и динамическую силу вращения `aggressiveSpin = spinForce * (1.5 + closenessFactor * 3.0)`.
+* **Ограничение скорости:** Если `moveX² + moveZ² > 1.0`, горизонтальный вектор нормализуется ровно до `1.0` блока/тик.
+5. **Расчет отталкивания (`pullToCenter == false`):** Применяет фиксированное смещение по осям X, Y, Z.
+6. **Событие и импульс:** Публикует `AnomalyPhysicsEvent`. В случае отсутствия отмены применяет результирующий вектор `Vec3` через `target.setDeltaMovement(...)` и выставляет `target.hurtMarked = true`.
 
 * **Связи:** `AnomalyPhysicsEvent`, `AnomalyZoneTransitionEvent`, `ZoneUtils`, `PhysicsConfig`, `ZoneConfig`, `AnomalyEntity`.
 
 ---
+
 ### 4.3. `ParticleComponent` (`components.ParticleComponent`)
 
 * **Класс:** `ParticleComponent` (имплементирует `IAnomalyComponent`)
-* **Назначение:** Клиентский компонент генерации частиц заданной геометрической формы с оптимизацией производительности.
+* **Назначение:** Клиентский компонент генерации частиц заданной геометрической формы с оптимизацией производительности, мгновенной реакцией на смену фаз и защитой от зацикливания.
 * **Технические детали:**
 * **Перечисление `Shape`:** `SPHERE`, `CYLINDER`, `DISC`.
 * **Константа дистанции рендеринга:** `RENDER_DISTANCE_SQ = 4900.0D` (70² блоков).
-* **Клиентский LOD (Level of Detail):** В `clientTick()` проверяет расстояние до `Minecraft.getInstance().player`. Если игрок находится дальше 70 блоков — выполнение тика прерывается.
-* **Динамический таймер:** Каждые `nextTriggerTick` тиков генерирует новое значение из `intervalRange.getInt()`, сбрасывает счетчик `clientTickCounter` и запрашивает случайное количество частиц `countRange.getInt()`.
-* **Оптимизация Loop Unswitching:** Проверка `switch (shape)` вынесена за пределы цикла генерации точек, исключая повторные ветвления.
-* **Оптимизация Rejection Sampling:** Точки внутри объемов генерируются с помощью циклов `do-while` на примитивах без использования тригонометрических функций (`Math.sin`, `Math.cos`):
-* **`SPHERE`:** Точки отбраковываются по условию rx² + ry² + rz² > 1.0. Спавнятся с базовым импульсом по оси Y = 0.02.
-* **`CYLINDER`:** Отбраковка по rx² + rz² > 1.0, высота Y выбирается случайно в пределах `random.nextDouble() * height`. Базовый импульс по оси Y = 0.05.
-* **`DISC`:** Отбраковка по rx² + rz² > 1.0, смещение по Y задается микро-разбросом в пределах ± 0.05. Базовый импульс по оси Y = 0.01.
+* **Клиентский LOD (Level of Detail):** В `clientTick()` проверяет расстояние до `Minecraft.getInstance().player`. Если игрок находится дальше 70 блоков — спавн частиц отменяется.
+* **Мгновенный старт и безопасный таймер:**
+* В конструкторе выставляется `nextTriggerTick = 0`, обеспечивая спавн визуала **сразу на первом же тике (0-й тик)** при инициализации новой фазы.
+* При наступлении срабатывания следующий интервал вычисляется как `nextTriggerTick = Math.max(1, intervalRange.getInt())`, что полностью исключает нулевые интервалы и предотвращает микрофризы клиента.
+
+* **Оптимизация Loop Unswitching:** Проверка `switch (shape)` вынесена за пределы цикла спавна, исключая ветвления внутри итераций.
+* **Оптимизация Rejection Sampling и защита от зацикливания:** Точки внутри объемов генерируются с помощью циклов `do-while` на примитивах без использования тяжелых тригонометрических функций (`Math.sin`, `Math.cos`). Каждая итерация ограничена счетчиком попыток (`attempts < 10`), что гарантирует защиту потока рендеринга от бесконечных циклов:
+* **`SPHERE`:** Отбраковка по `rx² + ry² + rz² > 1.0`. Спавн с базовым импульсом по оси Y = 0.02.
+* **`CYLINDER`:** Отбраковка по `rx² + rz² > 1.0`, случайная высота Y в пределах `random.nextDouble() * height`. Базовый импульс по оси Y = 0.05.
+* **`DISC`:** Отбраковка по `rx² + rz² > 1.0`, случайное смещение Y в пределах ±0.05. Базовый импульс по оси Y = 0.01.
+
 * **Связи:** `ParticleOptions`, `MinMaxRange`, `Minecraft`, `AnomalyEntity`, `Level`.
 
 ---
@@ -329,18 +339,21 @@ net.void_.anomalies
 ### 4.4. `SoundComponent` (`components.SoundComponent`)
 
 * **Класс:** `SoundComponent` (имплементирует `IAnomalyComponent`)
-* **Назначение:** Клиентский компонент проигрывания пространственных звуковых эффектов с динамическими интервалами задержки.
+* **Назначение:** Клиентский компонент воспроизведения пространственных звуковых эффектов с поддержкой мгновенного старта фазовых звуков и динамической рандомизацией интервалов.
 * **Технические детали:**
-* **Поля:** `soundEvent`, `intervalRange`, `soundSource`, `volume`, `pitch`.
-* **Серверный тик (`serverTick`):** Пустая реализация.
+* **Поля:** `soundEvent` (`SoundEvent`), `intervalRange` (`MinMaxRange`), `soundSource` (`SoundSource`), `volume` (`float`), `pitch` (`float`), `clientTickCounter` (`int`), `nextTriggerTick` (`int`).
+* **Мгновенный старт (0-й тик):** В конструкторе выставляется `nextTriggerTick = 0`. Это обеспечивает мгновенное воспроизведение ключевого звука фазы (например, взрыва или гула) сразу в момент перехода сущности в новое состояние, без ожидания случайного интервала.
+* **Серверный тик (`serverTick`):** Пустая реализация (Client Authority для локального звукового движка).
 * **Клиентский тик (`clientTick`):**
-* Увеличивает `clientTickCounter`.
-* По достижению `nextTriggerTick` генерирует новый интервал `intervalRange.getInt()`.
-* Вызывает `level.playLocalSound(pos.x, pos.y, pos.z, soundEvent, soundSource, volume, pitch, false)`. Параметр `distanceDelay = false` гарантирует мгновенный старт воспроизведения.
+* Увеличивает внутренний счетчик `clientTickCounter++`.
+* По достижению `nextTriggerTick` сбрасывает счетчик `clientTickCounter = 0`.
+* **Защитный таймер:** Расчет следующего задержки выполняется через `nextTriggerTick = Math.max(1, intervalRange.getInt())`, что гарантирует минимум 1 тик задержки и полностью защищает клиент от зацикливания и микрофризов при некорректных конфигах.
+* Воспроизводит локальный звук через `level.playLocalSound(pos.x, pos.y, pos.z, soundEvent, soundSource, volume, pitch, false)`. Флаг `distanceDelay = false` гарантирует отсутствие искусственной задержки распространения звуковой волны.
 
 * **Связи:** `SoundEvent`, `SoundSource`, `MinMaxRange`, `AnomalyEntity`, `Level`.
 
 ---
+
 
 ### 4.5. `TriggerComponent` (`components.TriggerComponent`)
 
@@ -380,24 +393,26 @@ net.void_.anomalies
 ### 4.7. `StateMachineComponent` (`components.StateMachineComponent`)
 
 * **Класс:** `StateMachineComponent` (имплементирует `IAnomalyComponent`)
-* **Назначение:** Серверный компонент-оркестратор жизненного цикла аномалии. Управляет вызовом правил DSL-скриптов или Java-поведений `IAnomalyStateBehavior` и переключением фаз.
+* **Назначение:** Серверный компонент-оркестратор жизненного цикла аномалии. Управляет исполнением DSL-скриптов и Java-поведений `IAnomalyStateBehavior`, а также корректным переключением фаз с обнулением локального состояния.
 * **Технические детали:**
-* **Инициализация и гибридный приоритет:** В конструкторе принимает `anomalyType` и запрашивает поведение из `AnomalyScriptRegistry`.
-* **Приоритет 1 (DSL):** Если в `AnomalyScriptRegistry` зарегистрирован DSL-скрипт (`AnomalyScriptModel`), он приводится к интерфейсу `IAnomalyStateBehavior`.
-* **Приоритет 2 (Java Fallback):** Если DSL-скрипт отсутствует, используется Java-поведение из `AnomalyBehaviorRegistry`.
-* **Поля:** `behavior` (`IAnomalyStateBehavior`), `ticksInState` (счетчик времени пребывания в текущей фазе), `initialized` (флаг отслеживания первичной активации).
+* **Инициализация и гибридный приоритет:** В конструкторе принимает `anomalyType` и запрашивает поведение из `AnomalyScriptRegistry`:
+* **Приоритет 1 (DSL):** Если зарегистрирован DSL-скрипт (`AnomalyScriptModel`), он приводится к интерфейсу `IAnomalyStateBehavior`.
+* **Приоритет 2 (Java Fallback):** Если DSL-скрипт отсутствует, берется fallback-поведение из `AnomalyBehaviorRegistry`.
+
+* **Поля:** `behavior` (`IAnomalyStateBehavior`), `ticksInState` (счетчик времени пребывания в фазе), `initialized` (флаг активации фазы).
 
 * **Серверный тик (`serverTick`):**
-1. При первом тике (`!initialized`) единоразово вызывает `behavior.onEnter(anomaly)` и выставляет `initialized = true`.
-2. Увеличивает счетчик `ticksInState++`.
-3. Вызывает `String nextState = behavior.onTick(anomaly, ticksInState)`.
-4. Если `nextState != null` и не равно текущему состоянию (без учета регистра `equalsIgnoreCase`):
-* Вызывает `behavior.onExit(anomaly)`.
-* Переключает фазу сущности через `anomaly.setCurrentState(nextState)` (что автоматически запускает `rebuildComponents()`).
+1. **Инициализация состояния:** При первом тике в текущем состоянии (`!initialized`) единоразово вызывает `behavior.onEnter(anomaly)` и выставляет `initialized = true`.
+2. **Инкремент времени:** Увеличивает внутренний счетчик `ticksInState++`.
+3. **Вычисление переходов:** Вызывает `String nextState = behavior.onTick(anomaly, ticksInState)` (в случае DSL-скриптов это передает управление `AnomalyScriptModel`, который собирает snapshot зон из `TransientZoneCache` и запрашивает вычисление AST-условий).
+4. **Переключение фазы и сброс состояния:** Если `nextState != null` и не равно текущему состоянию (`!nextState.equalsIgnoreCase(anomaly.getCurrentState())`):
+* Вызывает `behavior.onExit(anomaly)` для завершения предыдущей фазы.
+* **Обнуление счетчиков:** Принудительно сбрасывает `ticksInState = 0` и `initialized = false`, обеспечивая корректный старт следующего состояния.
+* **Очистка временного кэша:** Вызывает `TransientZoneCache.clear(anomaly)` для сброса устаревших событий зон и одноразовых триггеров.
+* **Смена состояния:** Устанавливает новое состояние через `anomaly.setCurrentState(nextState)`, инициируя пересборку компонентов сущности.
 
-* **Клиентский тик (`clientTick`):** Пустая реализация (соблюдается принцип Server Authority).
-
-* **Связи:** `AnomalyEntity`, `IAnomalyStateBehavior`, `AnomalyScriptRegistry`, `AnomalyBehaviorRegistry`, `ZoneFactory`.
+* **Клиентский тик (`clientTick`):** Пустая реализация (Server Authority).
+* **Связи:** `AnomalyEntity`, `IAnomalyStateBehavior`, `AnomalyScriptRegistry`, `AnomalyBehaviorRegistry`, `TransientZoneCache`, `ZoneFactory`.
 
 ---
 
@@ -592,15 +607,19 @@ net.void_.anomalies
 #### `AnomalyScriptRegistry` (`dsl.registry`)
 
 * **Класс:** `AnomalyScriptRegistry`
-* **Назначение:** Глобальное персистентное хранилище исполняемых скриптов аномалий.
+* **Назначение:** Глобальный потокобезопасный реестр для хранения и доступа к скомпилированным DSL-скриптам аномалий (`AnomalyScriptModel`).
 * **Технические детали:**
-* **Кэш:** `Map<String, AnomalyScriptModel> SCRIPTS` (реестр приводит все ключи типов к нижнему регистру `toLowerCase()`).
-* `register(String type, AnomalyScriptModel script)` — регистрирует или перезаписывает скрипт для указанного типа аномалии.
-* `get(String type)` — возвращает `Optional<AnomalyScriptModel>` по типу аномалии (защита от `null`).
-* `hasScript(String type)` — проверка наличия зарегистрированного DSL-скрипта.
-* `clear()` — очистка реестра при перезагрузке датапаков.
+* **Потокобезопасный кэш:** `Map<String, AnomalyScriptModel> SCRIPTS = new ConcurrentHashMap<>()`. Использование `ConcurrentHashMap` гарантирует корректный параллельный доступ и безопасность данных при фоновой асинхронной перезагрузке датапаков (команда `/reload`).
+* **Нормализация ключей:** Все типы аномалий автоматически приводятся к нижнему регистру (`toLowerCase()`) при записи и чтении для исключения ошибок регистра.
+* **Методы:**
+* `register(String type, AnomalyScriptModel script)` — регистрирует скрипт с предварительной валидацией на `null`.
+* `get(String type)` — возвращает `Optional<AnomalyScriptModel>`, безопасно обрабатывая `null`-запросы и отсутствующие ключи.
+* `hasScript(String type)` — выполняет быстрый чек наличия кастомного DSL-скрипта для типа аномалии.
+* `clear()` — атомарно очищает реестр перед повторным парсингом скриптов при перезагрузке ресурсов.
 
-* **Связи:** `AnomalyScriptModel`.
+* **Связи:** `AnomalyScriptModel`, `StateMachineComponent`, `AnomalyScriptLoader`.
+
+---
 
 
 ### 8.2. Абстрактное Синтаксическое Дерево (AST) Условий (`dsl.ast`)
@@ -710,29 +729,28 @@ net.void_.anomalies
 #### `TransientZoneCache` (`dsl.cache`)
 
 * **Класс:** `TransientZoneCache`
-* **Назначение:** Высокопроизводительный потокбезопасный кэш транзитных и непрерывных событий пребывания игроков в зонах аномалии.
-
+* **Назначение:** Высокопроизводительный потокобезопасный кэш одноразовых (`ENTERED`, `EXITED`) и непрерывных (`IN_ZONE`) событий нахождения игроков в зонах аномалии для DSL-движка.
 * **Технические детали:**
-* **Хранилище:** `Map<UUID, AnomalyCacheData> CACHE` на базе `ConcurrentHashMap`.
-
+* **Хранилище:** `Map<UUID, AnomalyCacheData> CACHE = new ConcurrentHashMap<>()` для доступа по UUID сущности аномалии.
 * **Структура `AnomalyCacheData`:**
-* `tickEvents` (`Set<ZoneEvent>`) — кэш мгновенных одноразовых событий тика (`ENTERED`, `EXITED`).
-* `activeZones` (`Set<String>`) — долгосрочный список имён/индексов зон, в которых игрок находится прямо сейчас (`IN_ZONE`).
+* `tickEvents` (`Set<ZoneEvent>`) — кэш одноразовых событий тика с первоначальной емкостью 4.
+* `activeZones` (`Set<String>`) — долгосрочный набор строковых индексов зон, в которых игрок находится в текущий момент.
 
-* **Запись событий (`recordTransition`):**
-1. Игнорирует все сущности, кроме игроков (`!(target instanceof Player)`).
-2. При наличии `previousZone` удаляет имя зоны из `activeZones` и записывает событие `ZoneEventType.EXITED` в `tickEvents`.
-3. При наличии `currentZone` добавляет имя зоны в `activeZones` и записывает событие `ZoneEventType.ENTERED` в `tickEvents`.
+* **Запись переходов (`recordTransition`):**
+1. Игнорирует все сущности, кроме игроков (`!(event.getTarget() instanceof Player)`).
+2. При выходе из зоны (`previousZone != null`) удаляет индекс из `activeZones` и генерирует `ZoneEventType.EXITED`.
+3. **Страховочный сброс:** Если индекс покинутой зоны не удалось определить или если сущность полностью покинула область аномалии (`currentZone == null`), принудительно очищает `activeZones.clear()`.
+4. При входе в зону (`currentZone != null`) добавляет индекс в `activeZones` и генерирует `ZoneEventType.ENTERED`.
 
 * **Извлечение снимка (`getSnapshotAndFlush`):**
-1. Формирует единый snapshot из текущих одноразовых событий `tickEvents` и динамически сгенерированных состояний `IN_ZONE` для всех зон из `activeZones`.
-2. Выполняет автоматический сброс: `tickEvents.clear()` (одноразовые триггеры входа/выхода сгорают до следующего тика).
+1. Объединяет сгоревшие одноразовые триггеры `tickEvents` и актуальные статусы `IN_ZONE` для всех элементов `activeZones`.
+2. Очищает `data.tickEvents.clear()` (одноразовые события входа/выхода сгорают до следующего кадра).
+* **Прямая идентификация зон (`getZoneIdentifier`):** Вычисляет строковый индекс слоя (0, 1, 2...) напрямую из определения `AnomalyDefinition` через `AnomalyReloadListener.get(...)`, сравнивая радиусы зон с погрешностью `Math.abs(...) < 0.0001` (отвязка от `ImpulseComponent`).
+* **Очистка (`clear`):** Полностью удаляет запись аномалии из кэша при смене фазы или уничтожении сущности.
 
-* **Идентификация зон (`getZoneIdentifier`):** Преобразует `ZoneConfig` в строковый индекс слоя (0, 1, 2...) на основе порядка отсортированных зон в `ImpulseComponent`.
+* **Связи:** `AnomalyZoneTransitionEvent`, `AnomalyDefinition`, `AnomalyReloadListener`, `Player`, `AnomalyEntity`, `ZoneConfig`, `EvaluationContext`.
 
-* **Связи:** `AnomalyZoneTransitionEvent`, `Player`, `AnomalyEntity`, `ZoneConfig`, `ImpulseComponent`, `EvaluationContext`.
-
-8.5. Событийно-Ориентированная Шина (`dsl.event`)
+### 8.5. Событийно-Ориентированная Шина (`dsl.event`)
 
 *Пакет:* `net.void_.anomalies.dsl.event`
 

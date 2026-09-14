@@ -23,7 +23,8 @@ public class SoundComponent implements IAnomalyComponent {
         this.soundSource = soundSource;
         this.volume = volume;
         this.pitch = pitch;
-        this.nextTriggerTick = intervalRange.getInt(); // Первое срабатывание со случайным интервалом
+        // ⚡ Первое срабатывание запускаем сразу (0-й тик), чтобы звук фазы играл без задержки
+        this.nextTriggerTick = 0;
     }
 
     @Override
@@ -34,12 +35,12 @@ public class SoundComponent implements IAnomalyComponent {
         clientTickCounter++;
         if (clientTickCounter >= nextTriggerTick) {
             clientTickCounter = 0;
-            nextTriggerTick = intervalRange.getInt(); // Генерируем новый рандомный интервал до следующего звука!
+            // 🛡️ Защита от 0 тиков (микрофризы при некорректном конфиге)
+            this.nextTriggerTick = Math.max(1, intervalRange.getInt());
 
-            var level = anomaly.level();
             var pos = anomaly.position();
 
-            level.playLocalSound(
+            anomaly.level().playLocalSound(
                     pos.x, pos.y, pos.z,
                     soundEvent,
                     soundSource,

@@ -107,16 +107,22 @@ public class ZoneFactory {
     }
 
     private static void setupTriggerAndPhysics(AnomalyEntity anomaly, AnomalyDefinition definition, CompoundTag overrides) {
-        TriggerConfig t = definition.trigger();
-        if (t == null) return;
-
+        List<ZoneConfig> zones = OverrideHelper.getZones(overrides, definition.zones());
         PhysicsConfig generalPhysics = definition.physics();
         boolean ignoreAnomalies = Boolean.TRUE.equals(definition.ignoreOtherAnomalies());
 
-        double expandRadius = overrides.contains("expandRadius") ? overrides.getDouble("expandRadius") : t.expandRadius();
-        MinMaxRange triggerInterval = OverrideHelper.getTriggerInterval(overrides, t);
+        // 1. Рассчитываем авто-радиус триггера как макс. радиус зон или берём оверрайд
+        double maxZoneRadius = zones.stream()
+                .mapToDouble(ZoneConfig::radius)
+                .max()
+                .orElse(1.0);
 
-        List<ZoneConfig> zones = OverrideHelper.getZones(overrides, definition.zones());
+        double expandRadius = overrides.contains("expandRadius")
+                ? overrides.getDouble("expandRadius")
+                : maxZoneRadius;
+
+        // По умолчанию тикаем каждый тик (1, 1), чтобы зонный инспект работал отзывчиво
+        MinMaxRange triggerInterval = new MinMaxRange(1, 1);
 
         DamageSource defaultDamageSource = anomaly.level().damageSources().generic();
         DamageComponent damageComp = new DamageComponent(new MinMaxRange(0, 0), defaultDamageSource);
@@ -135,6 +141,7 @@ public class ZoneFactory {
             impulseComp = null;
         }
 
+        // Автоматически навешиваем триггер-сканер без зависимости от TriggerConfig
         anomaly.addComponent(new TriggerComponent(expandRadius, triggerInterval,
                 (anom, target) -> handleTriggerTarget(anom, target, impulseComp, damageComp, zones, ignoreAnomalies)));
     }

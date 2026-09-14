@@ -4,6 +4,7 @@ import net.void_.anomalies.api.behavior.AnomalyBehaviorRegistry;
 import net.void_.anomalies.api.behavior.IAnomalyStateBehavior;
 import net.void_.anomalies.core.AnomalyEntity;
 import net.void_.anomalies.core.IAnomalyComponent;
+import net.void_.anomalies.dsl.cache.TransientZoneCache;
 import net.void_.anomalies.dsl.registry.AnomalyScriptRegistry;
 
 public class StateMachineComponent implements IAnomalyComponent {
@@ -13,7 +14,6 @@ public class StateMachineComponent implements IAnomalyComponent {
     private boolean initialized = false;
 
     public StateMachineComponent(String anomalyType) {
-        // Приоритет DSL-скриптам: если есть скрипт в реестре, берем его. Если нет — падаем на старый Java Registry.
         this.behavior = AnomalyScriptRegistry.get(anomalyType)
                 .map(script -> (IAnomalyStateBehavior) script)
                 .orElseGet(() -> AnomalyBehaviorRegistry.get(anomalyType));
@@ -21,7 +21,6 @@ public class StateMachineComponent implements IAnomalyComponent {
 
     @Override
     public void serverTick(AnomalyEntity anomaly) {
-        // Единоразовый вызов onEnter при первом тике нового состояния
         if (!initialized) {
             behavior.onEnter(anomaly);
             initialized = true;
@@ -29,18 +28,22 @@ public class StateMachineComponent implements IAnomalyComponent {
 
         ticksInState++;
 
-        // Вызов DSL-логики переходов с передачей тиков
         String nextState = behavior.onTick(anomaly, ticksInState);
 
-        // Переключение состояния при возврате имени следующей фазы
         if (nextState != null && !nextState.equalsIgnoreCase(anomaly.getCurrentState())) {
             behavior.onExit(anomaly);
+
+            // Сбрасываем счетчик тиков и флаг инициализации для нового состояния
+            this.ticksInState = 0;
+            this.initialized = false;
+
+            // Сбрасываем кэш одноразовых ивентов тика при смене фазы
+            TransientZoneCache.clear(anomaly);
+
             anomaly.setCurrentState(nextState);
         }
     }
 
     @Override
-    public void clientTick(AnomalyEntity anomaly) {
-        // На клиенте логика переходов не исполняется (Server Authority)
-    }
+    public void clientTick(AnomalyEntity anomaly) {}
 }

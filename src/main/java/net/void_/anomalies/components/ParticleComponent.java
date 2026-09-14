@@ -21,7 +21,6 @@ public class ParticleComponent implements IAnomalyComponent {
     private int clientTickCounter = 0;
     private int nextTriggerTick;
 
-    // 🌟 Предрассчитанный квадрат радиуса отрисовки (70.0^2 = 4900.0)
     private static final double RENDER_DISTANCE_SQ = 4900.0D;
 
     public ParticleComponent(ParticleOptions particleType, MinMaxRange intervalRange, Shape shape, double radius, double height, MinMaxRange countRange) {
@@ -31,7 +30,8 @@ public class ParticleComponent implements IAnomalyComponent {
         this.radius = radius;
         this.height = height;
         this.countRange = countRange;
-        this.nextTriggerTick = intervalRange.getInt();
+        // ⚡ Спавним визуал сразу на первом же тике новой фазы
+        this.nextTriggerTick = 0;
     }
 
     @Override
@@ -39,42 +39,40 @@ public class ParticleComponent implements IAnomalyComponent {
 
     @Override
     public void clientTick(AnomalyEntity anomaly) {
-        var level = anomaly.level();
-
-        // 🛑 LOD-ОПТИМИЗАЦИЯ КЛИЕНТА: Проверяем дистанцию до локального игрока
         Player localPlayer = Minecraft.getInstance().player;
         if (localPlayer != null) {
             double distanceSq = anomaly.distanceToSqr(localPlayer);
             if (distanceSq > RENDER_DISTANCE_SQ) {
-                return; // Игрок далеко — не тратим ресурсы на спавн партиклов
+                return;
             }
         }
 
         clientTickCounter++;
         if (clientTickCounter >= nextTriggerTick) {
             clientTickCounter = 0;
-            nextTriggerTick = intervalRange.getInt(); // Новый случайный интервал
+            // 🛡️ Гарантия минимум 1 тика между вызовами
+            nextTriggerTick = Math.max(1, intervalRange.getInt());
 
+            var level = anomaly.level();
             var pos = anomaly.position();
             var random = level.random;
-            int currentCount = countRange.getInt(); // Случайное количество частиц
+            int currentCount = countRange.getInt();
 
             double posX = pos.x;
             double posY = pos.y;
             double posZ = pos.z;
 
-            // ⚡ LOOP UNSWITCHING: Выносим switch за пределы цикла
-            // Проверяем форму ровно 1 раз за тик вместо N раз
             switch (shape) {
                 case SPHERE -> {
-                    // ⚡ REJECTION SAMPLING: Спавн в сфере без Math.sin, Math.cos, Math.acos и Math.cbrt
                     for (int i = 0; i < currentCount; i++) {
                         double rx, ry, rz;
+                        int attempts = 0;
                         do {
                             rx = random.nextDouble() * 2.0D - 1.0D;
                             ry = random.nextDouble() * 2.0D - 1.0D;
                             rz = random.nextDouble() * 2.0D - 1.0D;
-                        } while (rx * rx + ry * ry + rz * rz > 1.0D);
+                            attempts++;
+                        } while (rx * rx + ry * ry + rz * rz > 1.0D && attempts < 10);
 
                         double x = posX + rx * radius;
                         double y = posY + ry * radius + (height * 0.5D);
@@ -84,13 +82,14 @@ public class ParticleComponent implements IAnomalyComponent {
                     }
                 }
                 case CYLINDER -> {
-                    // ⚡ REJECTION SAMPLING: Спавн в 2D-диске по осям XZ без тригонометрии
                     for (int i = 0; i < currentCount; i++) {
                         double rx, rz;
+                        int attempts = 0;
                         do {
                             rx = random.nextDouble() * 2.0D - 1.0D;
                             rz = random.nextDouble() * 2.0D - 1.0D;
-                        } while (rx * rx + rz * rz > 1.0D);
+                            attempts++;
+                        } while (rx * rx + rz * rz > 1.0D && attempts < 10);
 
                         double x = posX + rx * radius;
                         double y = posY + random.nextDouble() * height;
@@ -100,13 +99,14 @@ public class ParticleComponent implements IAnomalyComponent {
                     }
                 }
                 case DISC -> {
-                    // ⚡ REJECTION SAMPLING: Равномерный диск без Math.sqrt, sin и cos
                     for (int i = 0; i < currentCount; i++) {
                         double rx, rz;
+                        int attempts = 0;
                         do {
                             rx = random.nextDouble() * 2.0D - 1.0D;
                             rz = random.nextDouble() * 2.0D - 1.0D;
-                        } while (rx * rx + rz * rz > 1.0D);
+                            attempts++;
+                        } while (rx * rx + rz * rz > 1.0D && attempts < 10);
 
                         double x = posX + rx * radius;
                         double y = posY + (random.nextDouble() - 0.5D) * 0.1D;
