@@ -50,9 +50,5 @@
     "impulseY": 0.15,
     "pullToCenter": false
   },
-  "trigger": {
-    "expandRadius": 2.5,
-    "interval": 1
-  },
   "ignoreOtherAnomalies": true
 }

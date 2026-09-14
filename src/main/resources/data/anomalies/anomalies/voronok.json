@@ -20,10 +20,6 @@
     "volume": 1.0,
     "pitch": 0.4
   },
-  "trigger": {
-    "expandRadius": 8.0,
-    "interval": 1
-  },
   "zones": [
     {
       "radius": 1.3,

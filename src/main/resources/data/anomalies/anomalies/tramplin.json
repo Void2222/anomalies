@@ -20,10 +20,6 @@
     "volume": 1.0,
     "pitch": 1.0
   },
-  "trigger": {
-    "expandRadius": 0.5,
-    "interval": 5
-  },
   "zones": [
     {
       "radius": 0.5,
@@ -31,12 +27,12 @@
         "innerAmount": 0,
         "fireSeconds": 0,
         "damageType": "fall"
+      },
+      "physics": {
+        "impulseY": 0.2,
+        "pullToCenter": false
       }
     }
   ],
-  "physics": {
-    "impulseY": 1.2,
-    "pullToCenter": false
-  },
   "ignoreOtherAnomalies": false
 }

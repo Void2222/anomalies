@@ -38,9 +38,5 @@
       }
     }
   ],
-  "trigger": {
-    "expandRadius": 2.5,
-    "interval": 2
-  },
   "ignoreOtherAnomalies": true
 }
