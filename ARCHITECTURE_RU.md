@@ -51,16 +51,25 @@ net.void_.anomalies
 * **Свойства в конструкторе:** `noPhysics = true`.
 * **Флаги переопределения:** `isPickable() = true`, `isInvulnerable() = true`, `canBeCollidedWith() = false`.
 
+* **Безопасная итерация тика:** В методах `tick()` на клиенте и сервере итерация происходит по потокобезопасной локальной копии списка `new ArrayList<>(this.components)`, что предотвращает `ConcurrentModificationException` при динамической пересборке компонентов во время работы тикера.
+
 * **Синхронизация (SynchedEntityData):**
 * `ANOMALY_TYPE` (`String`) — базовый тип аномалии.
-* `CURRENT_STATE` (`String`) — активная фаза (по умолчанию `"idle"`).
-* При вызове `onSyncedDataUpdated()` на клиенте авто-вызывается `rebuildComponents()`, чтобы визуал и звук моментально подстроились под новую фазу.
+* `CURRENT_STATE` (`String`) — активная фаза (по умолчанию `"idle"`, при установке автоматически приводится к нижнему регистру `toLowerCase()`).
+* При вызове `onSyncedDataUpdated()` на клиенте отслеживается изменение `ANOMALY_TYPE` или `CURRENT_STATE` и авто-вызывается `rebuildComponents()`, чтобы визуал и звук моментально подстроились под новую фазу.
 * **Размеры сущности:** По умолчанию `1.0F x 1.0F`. Метод `setAnomalyDimensions(width, height)` вызывает `refreshDimensions()`. Динамический хитбокс возвращается через `getDimensions(Pose pose) -> EntityDimensions.scalable(width, height)`.
+
+* **Управление NBT-оверрайдами и компонентами:**
+* `getCustomOverrides()` / `setCustomOverrides(CompoundTag tag)` — возвращает или подменяет тег оверрайдов с вызовом `rebuildComponents()`.
+* `setOverrideDouble(key, value)` — удобный метод запись конкретного `double`-параметра в NBT с авто-вызовом `rebuildComponents()`.
+* `getComponent(Class<T> type)` — дженерик-метод для поиска и извлечения активного экземпляра компонента по его классу.
+
 
 * **Структура NBT в сохранении мира:**
 * `"AnomalyType"` (`String`) — идентификатор шаблона аномалии.
 * `"CurrentState"` (`String`) — текущая фаза жизненного цикла.
 * `"CustomOverrides"` (`CompoundTag`) — NBT-тег локальных переопределений параметров.
+
 
 * **Управление NBT-оверрайдами:**
 * `getCustomOverrides()` / `setCustomOverrides(CompoundTag tag)` — возвращает или полностью подменяет тег с вызовом `rebuildComponents()`.
@@ -69,7 +78,7 @@ net.void_.anomalies
 * На клиенте (`level().isClientSide`): итеративно вызывает `component.clientTick(this)`.
 * На сервере: итеративно вызывает `component.serverTick(this)`.
 
-* **Пересборка (`rebuildComponents()`):** Очищает `components.clear()` и вызывает `ZoneFactory.applyComponents(this, type, state)` для динамической подмены логики на лету.
+* **Пересборка (`rebuildComponents()`):** Очищает `components.clear()` и вызывает `ZoneFactory.applyComponents(this, type, getCurrentState())` для динамической подмены логики на лету.
 * **Спавн-пакет:** `getAddEntityPacket()` возвращает `NetworkHooks.getEntitySpawningPacket(this)`.
 
 * **Связи:** `ZoneFactory`, `IAnomalyComponent`, `CompoundTag`, `NetworkHooks`, `SynchedEntityData`.
@@ -371,24 +380,24 @@ net.void_.anomalies
 ### 4.7. `StateMachineComponent` (`components.StateMachineComponent`)
 
 * **Класс:** `StateMachineComponent` (имплементирует `IAnomalyComponent`)
-
-* **Назначение:** Серверный компонент-оркестратор жизненного цикла аномалии. Управляет вызовом `IAnomalyStateBehavior` и переключением фаз.
-
+* **Назначение:** Серверный компонент-оркестратор жизненного цикла аномалии. Управляет вызовом правил DSL-скриптов или Java-поведений `IAnomalyStateBehavior` и переключением фаз.
 * **Технические детали:**
-* **Поля:** `ticksInState` (счетчик времени пребывания в текущей фазе).
-* **Серверный тик (`serverTick`):**
-1. Увеличивает `ticksInState`.
-2. Извлекает текущую фазу `currentState = anomaly.getCurrentState()`.
-3. Запрашивает поведение через `AnomalyBehaviorRegistry.get(anomaly.getAnomalyType())`.
-4. Вызывает `String nextState = behavior.onTick(anomaly, ticksInState)`.
-5. Если `nextState != null` и не равно `currentState`, запускает переключение фазы:
-* Вызывает `behavior.onExit(anomaly)`.
-* Записывает новое состояние в сущность через `anomaly.setCurrentState(nextState)`.
-* Вызывает `anomaly.rebuildComponents()` для обновления физики, звука и частиц под новый JSON-конфиг.
-* Сбрасывает `ticksInState = 0`.
-* Вызывает `behavior.onEnter(anomaly)`.
+* **Инициализация и гибридный приоритет:** В конструкторе принимает `anomalyType` и запрашивает поведение из `AnomalyScriptRegistry`.
+* **Приоритет 1 (DSL):** Если в `AnomalyScriptRegistry` зарегистрирован DSL-скрипт (`AnomalyScriptModel`), он приводится к интерфейсу `IAnomalyStateBehavior`.
+* **Приоритет 2 (Java Fallback):** Если DSL-скрипт отсутствует, используется Java-поведение из `AnomalyBehaviorRegistry`.
+* **Поля:** `behavior` (`IAnomalyStateBehavior`), `ticksInState` (счетчик времени пребывания в текущей фазе), `initialized` (флаг отслеживания первичной активации).
 
-* **Связи:** `AnomalyEntity`, `IAnomalyStateBehavior`, `AnomalyBehaviorRegistry`, `ZoneFactory`.
+* **Серверный тик (`serverTick`):**
+1. При первом тике (`!initialized`) единоразово вызывает `behavior.onEnter(anomaly)` и выставляет `initialized = true`.
+2. Увеличивает счетчик `ticksInState++`.
+3. Вызывает `String nextState = behavior.onTick(anomaly, ticksInState)`.
+4. Если `nextState != null` и не равно текущему состоянию (без учета регистра `equalsIgnoreCase`):
+* Вызывает `behavior.onExit(anomaly)`.
+* Переключает фазу сущности через `anomaly.setCurrentState(nextState)` (что автоматически запускает `rebuildComponents()`).
+
+* **Клиентский тик (`clientTick`):** Пустая реализация (соблюдается принцип Server Authority).
+
+* **Связи:** `AnomalyEntity`, `IAnomalyStateBehavior`, `AnomalyScriptRegistry`, `AnomalyBehaviorRegistry`, `ZoneFactory`.
 
 ---
 
@@ -544,3 +553,197 @@ net.void_.anomalies
 * **Метод `register(IEventBus eventBus)`:** Подключает реестр `ENTITIES` к шине событий мода.
 
 * **Связи:** `DeferredRegister`, `RegistryObject`, `EntityType`, `MobCategory`, `AnomalyEntity`, `Anomalies`.
+
+### 8.1. Модели Данных и Реестр Скриптов (`dsl.model`, `dsl.registry`)
+
+*Пакеты:* `net.void_.anomalies.dsl.model`, `net.void_.anomalies.dsl.registry`
+
+#### `TransitionRule` (`dsl.model`)
+
+* **Тип:** Record
+* **Назначение:** Immutable DTO правила перехода между фазами аномалии.
+* **Поля:**
+* `ICondition condition` — AST-дерево условия, необходимое для совершения перехода.
+* `String targetState` — имя целевого состояния, в которое переходит аномалия при истинности условия.
+
+
+* **Связи:** `ICondition`, `AnomalyScriptModel`.
+
+#### `AnomalyScriptModel` (`dsl.model`)
+
+* **Класс:** `AnomalyScriptModel` (имплементирует `api.behavior.IAnomalyStateBehavior`)
+* **Назначение:** Исполняемый runtime-скрипт аномалии. Хранит связки фаз с конфигурациями, графы переходов и выполняет роль стейт-машины при тике сущности.
+* **Поля:**
+* `Map<String, String> binds` — маппинг имени состояния на путь к JSON-файлу его конфигурации (например, `"idle" -> "anomalies/zharka/idle.json"`).
+* `Map<String, List<TransitionRule>> transitions` — граф переходов (состояние -> список правил `TransitionRule`).
+* `String initialState` — стартовое состояние жизненного цикла (по умолчанию `"idle"`).
+
+* **Технические детали:**
+* `addBind(state, jsonPath)` / `addTransition(state, rule)` — методы наполнения модели при парсинге.
+* **Исполнение тика (`onTick`):**
+1. Извлекает активное состояние сущности `anomaly.getCurrentState()`.
+2. Если для текущего состояния отсутствуют правила `transitions`, возвращает `null` (переход не требуется).
+3. Запрашивает снимки событий зон через `TransientZoneCache.getSnapshotAndFlush(anomaly)` (с авто-очисткой сгоревших фреймов).
+4. Создает экземпляр `EvaluationContext(anomaly, ticksInState, zoneEvents)`.
+5. Последовательно проверяет правила в порядке их добавления (`rule.condition().test(ctx)`). Первый сработавший `rule` возвращает `targetState`.
+
+* **Связи:** `IAnomalyStateBehavior`, `TransitionRule`, `TransientZoneCache`, `EvaluationContext`, `AnomalyEntity`.
+
+#### `AnomalyScriptRegistry` (`dsl.registry`)
+
+* **Класс:** `AnomalyScriptRegistry`
+* **Назначение:** Глобальное персистентное хранилище исполняемых скриптов аномалий.
+* **Технические детали:**
+* **Кэш:** `Map<String, AnomalyScriptModel> SCRIPTS` (реестр приводит все ключи типов к нижнему регистру `toLowerCase()`).
+* `register(String type, AnomalyScriptModel script)` — регистрирует или перезаписывает скрипт для указанного типа аномалии.
+* `get(String type)` — возвращает `Optional<AnomalyScriptModel>` по типу аномалии (защита от `null`).
+* `hasScript(String type)` — проверка наличия зарегистрированного DSL-скрипта.
+* `clear()` — очистка реестра при перезагрузке датапаков.
+
+* **Связи:** `AnomalyScriptModel`.
+
+
+### 8.2. Абстрактное Синтаксическое Дерево (AST) Условий (`dsl.ast`)
+
+*Пакеты:* `net.void_.anomalies.dsl.ast`, `net.void_.anomalies.dsl.ast.leaf`, `net.void_.anomalies.dsl.ast.logical`
+
+#### `ICondition` (`dsl.ast`)
+
+* **Интерфейс:** `@FunctionalInterface ICondition`
+* **Назначение:** Единый контракт узла синтаксического дерева условий.
+
+* **Метод:** `boolean test(EvaluationContext ctx)` — выполняет вычисление условия в заданном контексте исполнения `EvaluationContext`.
+
+* **Связи:** `EvaluationContext`.
+
+#### Листовые Предикаты / Leaf Conditions (`dsl.ast.leaf`)
+
+* **`TimerCondition(int targetTicks)`** (Record)
+* **Назначение:** Проверка времени пребывания аномалии в текущей фазе.
+
+* **Вычисление:** Возвращает `true`, если счетчик тиков сущности `ctx.ticksInState()` достиг или превысил `targetTicks`.
+
+* **`ChanceCondition`** (Class)
+* **Назначение:** Вероятностная проверка совершения перехода.
+
+* **Технические детали:** При инициализации принимает `chance` (`double`). Пограничные значения `chance >= 1.0` возвращают `true`, `chance <= 0.0` — `false`. В остальных случаях использует генератор `RandomSource.create()` и сравнивает `random.nextDouble() < chance`.
+
+* **`PlayerZoneCondition`** (Record)
+* **Назначение:** Проверка наступления события взаимодействия игрока с зоной аномалии.
+
+* **Поля:** `EvaluationContext.ZoneEventType eventType`, `String zoneName`.
+
+* **Вычисление:** Проверяет наличие записи `ZoneEvent(eventType, zoneName)` в сете активных ивентов `ctx.activeZoneEvents()`.
+
+#### Логические Операторы / Logical Nodes (`dsl.ast.logical`)
+
+* **`AndCondition(ICondition left, ICondition right)`**
+* **Назначение:** Логическое "И" (`&&`).
+
+* **Оптимизация:** Short-circuit evaluation — если вычисление `left.test(ctx)` возвращает `false`, правое дерево `right` не вычисляется.
+
+* **`OrCondition(ICondition left, ICondition right)`**
+* **Назначение:** Логическое "ИЛИ" (`||`).
+
+* **Оптимизация:** Short-circuit evaluation — если `left.test(ctx)` возвращает `true`, правое дерево `right` не вычисляется.
+
+* **`NotCondition(ICondition target)`**
+* **Назначение:** Логическое инвертирование "НЕ" (`!`) результата подчиненного условия `target.test(ctx)`.
+
+* **Связи:** `ICondition`, `EvaluationContext`, `RandomSource`.
+
+### 8.3. Парсинг и Загрузка Скриптов (`dsl.visitor`, `dsl.loader`)
+
+*Пакеты:* `net.void_.anomalies.dsl.visitor`, `net.void_.anomalies.dsl.loader`
+
+#### `AnomalyAstBuilder` (`dsl.visitor`)
+
+* **Класс:** `AnomalyAstBuilder` (расширяет `AnomalyDSLBaseVisitor<Object>`)
+* **Назначение:** AST-посетитель (Visitor) дерева разбора ANTLR. Преобразует синтаксическое дерево файла `.anom` в исполняемую модель `AnomalyScriptModel` и вложенные узлы `ICondition`.
+
+* **Технические детали:**
+* `visitScript`: главный входной метод. Итерируется по инструкциям файла (`StatementContext`), наполняет маппинг `binds`, задает `initialState` и транслирует блоки `stateBlock` в списки правил `TransitionRule`.
+* `visitParenExpr`, `visitNotExpr`, `visitAndExpr`, `visitOrExpr`: создают логические узлы AST (`NotCondition`, `AndCondition`, `OrCondition`) с рекурсивным обходом поддеревьев.
+* `visitTimerCondition` / `visitChanceCondition`: считывают примитивные значения из токенов и формируют `TimerCondition` и `ChanceCondition`.
+* `visitPlayerZoneCondition`: очищает кавычки имени зоны, считывает имя события и приводит его к enum `ZoneEventType` (`entered_zone` -> `ENTERED`, `exited_zone` -> `EXITED`, `in_zone` -> `IN_ZONE`).При неизвестном типе события выбрасывает `IllegalArgumentException`.
+
+* **Связи:** `AnomalyDSLBaseVisitor`, `AnomalyDSLParser`, `AnomalyScriptModel`, `TransitionRule`, `ICondition`, `ZoneEventType`.
+
+#### `AnomalyScriptLoader` (`dsl.loader`)
+
+* **Класс:** `AnomalyScriptLoader` (имплементирует `PreparableReloadListener`)
+* **Назначение:** Асинхронный датапак-загрузчик DSL-скриптов с расширением `.anom` из каталога `data/<mod_id>/anomalies/`.
+
+* **Технические детали:**
+* **Двухфазная загрузка (`reload`):**
+1. **Асинхронная фаза (`loadScripts`):** сканирует ресурсы датапаков на файлы `.anom` через `ResourceManager`. Для каждого файла запускает лексер ANTLR (`AnomalyDSLLexer`) и парсер (`AnomalyDSLParser`), после чего передает дерево разбора в `AnomalyAstBuilder`. Имя типа аномалии автоматически извлекается из имени файла (например, `zharka.anom` -> `"zharka"`).
+2. **Синхронная фаза (`apply`):** очищает `AnomalyScriptRegistry.clear()`, выполняет валидацию связок фаз `validateScriptBinds` и регистрирует новые скрипты в `AnomalyScriptRegistry`.
+
+* **Валидация (`validateScriptBinds`):** проверяет соответствие декларированных в DSL связок (`binds`) реальным загруженным JSON-конфигурациям из `AnomalyReloadListener`. При отсутствии совпадения выводит предупреждение в лог (`LOGGER.warn`).
+
+* **Связи:** `PreparableReloadListener`, `ResourceManager`, `AnomalyDSLLexer`, `AnomalyDSLParser`, `AnomalyAstBuilder`, `AnomalyScriptModel`, `AnomalyScriptRegistry`, `AnomalyReloadListener`.
+
+---
+
+### 8.4. Контекст Исполнения и Кэширование (`dsl.context`, `dsl.cache`)
+
+*Пакеты:* `net.void_.anomalies.dsl.context`, `net.void_.anomalies.dsl.cache`
+
+#### `EvaluationContext` (`dsl.context`)
+
+* **Тип:** Record
+* **Назначение:** Immutable-контекст состояния аномалии в конкретный момент тика. Передается в AST-условия `ICondition.test(ctx)` для проверки логических выражений DSL.
+
+* **Поля:**
+* `AnomalyEntity anomaly` — ссылка на сущность аномалии.
+* `int ticksInState` — количество тиков, проведенное аномалией в текущей фазе.
+* `Set<ZoneEvent> activeZoneEvents` — набо снимков событий и состояний зон.
+
+* **Вложенные типы:**
+* `enum ZoneEventType` — типы триггеров взаимодействия с зоной (`ENTERED`, `EXITED`, `IN_ZONE`).
+* `record ZoneEvent(ZoneEventType type, String zoneName)` — структура конкретного события/состояния зоны.
+
+* **Статический фабричный метод:** `simple(anomaly, ticksInState)` — создает упрощенный контекст с пустым множеством событий `Collections.emptySet()`.
+
+* **Связи:** `AnomalyEntity`, `ICondition`, `TransientZoneCache`.
+
+#### `TransientZoneCache` (`dsl.cache`)
+
+* **Класс:** `TransientZoneCache`
+* **Назначение:** Высокопроизводительный потокбезопасный кэш транзитных и непрерывных событий пребывания игроков в зонах аномалии.
+
+* **Технические детали:**
+* **Хранилище:** `Map<UUID, AnomalyCacheData> CACHE` на базе `ConcurrentHashMap`.
+
+* **Структура `AnomalyCacheData`:**
+* `tickEvents` (`Set<ZoneEvent>`) — кэш мгновенных одноразовых событий тика (`ENTERED`, `EXITED`).
+* `activeZones` (`Set<String>`) — долгосрочный список имён/индексов зон, в которых игрок находится прямо сейчас (`IN_ZONE`).
+
+* **Запись событий (`recordTransition`):**
+1. Игнорирует все сущности, кроме игроков (`!(target instanceof Player)`).
+2. При наличии `previousZone` удаляет имя зоны из `activeZones` и записывает событие `ZoneEventType.EXITED` в `tickEvents`.
+3. При наличии `currentZone` добавляет имя зоны в `activeZones` и записывает событие `ZoneEventType.ENTERED` в `tickEvents`.
+
+* **Извлечение снимка (`getSnapshotAndFlush`):**
+1. Формирует единый snapshot из текущих одноразовых событий `tickEvents` и динамически сгенерированных состояний `IN_ZONE` для всех зон из `activeZones`.
+2. Выполняет автоматический сброс: `tickEvents.clear()` (одноразовые триггеры входа/выхода сгорают до следующего тика).
+
+* **Идентификация зон (`getZoneIdentifier`):** Преобразует `ZoneConfig` в строковый индекс слоя (0, 1, 2...) на основе порядка отсортированных зон в `ImpulseComponent`.
+
+* **Связи:** `AnomalyZoneTransitionEvent`, `Player`, `AnomalyEntity`, `ZoneConfig`, `ImpulseComponent`, `EvaluationContext`.
+
+8.5. Событийно-Ориентированная Шина (`dsl.event`)
+
+*Пакет:* `net.void_.anomalies.dsl.event`
+
+#### `AnomalyEventListener` (`dsl.event`)
+
+* **Класс:** `AnomalyEventListener`
+* **Назначение:** Слушатель событий шины Forge, связывающий игровое взаимодействие сущностей с кэшем DSL-движка.
+* **Технические детали:**
+* Аннотирован `@Mod.EventBusSubscriber` для автоматической регистрации на главной шине событий `MinecraftForge.EVENT_BUS`.
+* **Перехват смены зон (`onZoneTransition`):**
+* Подписан на событие `AnomalyZoneTransitionEvent` через аннотацию `@SubscribeEvent`.
+* Перенаправляет полученное событие в `TransientZoneCache.recordTransition(event)`, обеспечивая своевременную фиксацию входа, выхода и присутствия игроков в зонах аномалий для последующего вычисления AST-условий `PlayerZoneCondition`.
+
+* **Связи:** `AnomalyZoneTransitionEvent`, `TransientZoneCache`, `@Mod.EventBusSubscriber`, `@SubscribeEvent`.
