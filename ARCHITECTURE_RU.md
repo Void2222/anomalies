@@ -51,36 +51,30 @@ net.void_.anomalies
 * **Свойства в конструкторе:** `noPhysics = true`.
 * **Флаги переопределения:** `isPickable() = true`, `isInvulnerable() = true`, `canBeCollidedWith() = false`.
 
-* **Безопасная итерация тика:** В методах `tick()` на клиенте и сервере итерация происходит по потокобезопасной локальной копии списка `new ArrayList<>(this.components)`, что предотвращает `ConcurrentModificationException` при динамической пересборке компонентов во время работы тикера.
-
+* **Оптимизированная итерация тика (Snapshot Array Swap):** В методе `tick()` итерация происходит по `volatile`-массиву `activeComponents` без создания новых объектов `new ArrayList<>()`. Это гарантирует абсолютный 0 allocation memory в тиках и защищает от `ConcurrentModificationException` при пересборке компонентов.
 * **Синхронизация (SynchedEntityData):**
 * `ANOMALY_TYPE` (`String`) — базовый тип аномалии.
-* `CURRENT_STATE` (`String`) — активная фаза (по умолчанию `"idle"`, при установке автоматически приводится к нижнему регистру `toLowerCase()`).
-* При вызове `onSyncedDataUpdated()` на клиенте отслеживается изменение `ANOMALY_TYPE` или `CURRENT_STATE` и авто-вызывается `rebuildComponents()`, чтобы визуал и звук моментально подстроились под новую фазу.
+* `CURRENT_STATE` (`String`) — активная фаза (по умолчанию `"idle"`, всегда приводится к нижнему регистру `toLowerCase()`).
+* `onSyncedDataUpdated()` отслеживает изменения `ANOMALY_TYPE` и `CURRENT_STATE` **строго на клиенте** (`isClientSide`), вызывая `rebuildComponents()`, чтобы моментально пересоздать визуал и звук. На сервере двойной вызов исключен.
+
 * **Размеры сущности:** По умолчанию `1.0F x 1.0F`. Метод `setAnomalyDimensions(width, height)` вызывает `refreshDimensions()`. Динамический хитбокс возвращается через `getDimensions(Pose pose) -> EntityDimensions.scalable(width, height)`.
-
+* **Атомарная загрузка NBT:** При считывании мира (`readAdditionalSaveData`) сначала зачитываются все параметры (`AnomalyType`, `CurrentState`, `CustomOverrides`), и лишь в самом конце вызывается единственный `rebuildComponents()`.
 * **Управление NBT-оверрайдами и компонентами:**
-* `getCustomOverrides()` / `setCustomOverrides(CompoundTag tag)` — возвращает или подменяет тег оверрайдов с вызовом `rebuildComponents()`.
-* `setOverrideDouble(key, value)` — удобный метод запись конкретного `double`-параметра в NBT с авто-вызовом `rebuildComponents()`.
-* `getComponent(Class<T> type)` — дженерик-метод для поиска и извлечения активного экземпляра компонента по его классу.
-
+* `getCustomOverrides()` / `setCustomOverrides(CompoundTag tag)` — возвращает или подменяет тег оверрайдов (защитная копия) с вызовом `rebuildComponents()`.
+* `setOverrideDouble(key, value)` — запись `double`-параметра в NBT с авто-вызовом `rebuildComponents()`.
+* `getComponent(Class<T> type)` — дженерик-метод для поиска и извлечения активного экземпляра компонента по его классу ($O(N)$ проход по списку).
 
 * **Структура NBT в сохранении мира:**
 * `"AnomalyType"` (`String`) — идентификатор шаблона аномалии.
 * `"CurrentState"` (`String`) — текущая фаза жизненного цикла.
 * `"CustomOverrides"` (`CompoundTag`) — NBT-тег локальных переопределений параметров.
 
-
-* **Управление NBT-оверрайдами:**
-* `getCustomOverrides()` / `setCustomOverrides(CompoundTag tag)` — возвращает или полностью подменяет тег с вызовом `rebuildComponents()`.
-
 * **Исполнение тика (`tick()`):**
 * На клиенте (`level().isClientSide`): итеративно вызывает `component.clientTick(this)`.
 * На сервере: итеративно вызывает `component.serverTick(this)`.
 
-* **Пересборка (`rebuildComponents()`):** Очищает `components.clear()` и вызывает `ZoneFactory.applyComponents(this, type, getCurrentState())` для динамической подмены логики на лету.
+* **Пересборка (`rebuildComponents()`):** Очищает `components.clear()`, пересобирает компоненты через `ZoneFactory.applyComponents(this, type, getCurrentState())` и обновляет снапшот `activeComponents`.
 * **Спавн-пакет:** `getAddEntityPacket()` возвращает `NetworkHooks.getEntitySpawningPacket(this)`.
-
 * **Связи:** `ZoneFactory`, `IAnomalyComponent`, `CompoundTag`, `NetworkHooks`, `SynchedEntityData`.
 
 ---

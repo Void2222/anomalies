@@ -32,6 +32,8 @@ public class AnomalyEntity extends Entity {
             SynchedEntityData.defineId(AnomalyEntity.class, EntityDataSerializers.STRING);
 
     private final List<IAnomalyComponent> components = new ArrayList<>();
+    // Снапшот компонентов для безопасной и быстрой итерации без аллокации памяти в тике
+    private volatile IAnomalyComponent[] activeComponents = new IAnomalyComponent[0];
 
     public AnomalyEntity(EntityType<?> entityType, Level level) {
         super(entityType, level);
@@ -94,9 +96,12 @@ public class AnomalyEntity extends Entity {
     @Override
     public void onSyncedDataUpdated(EntityDataAccessor<?> key) {
         super.onSyncedDataUpdated(key);
-        // Реакция на изменение типа ИЛИ состояния
-        if (ANOMALY_TYPE.equals(key) || CURRENT_STATE.equals(key)) {
-            rebuildComponents();
+        // Реакция на изменение типа ИЛИ состояния строго на КЛИЕНТЕ,
+        // чтобы исключить дублирование пересборки на сервере при entityData.set()
+        if (this.level().isClientSide) {
+            if (ANOMALY_TYPE.equals(key) || CURRENT_STATE.equals(key)) {
+                rebuildComponents();
+            }
         }
     }
 
@@ -104,8 +109,8 @@ public class AnomalyEntity extends Entity {
     public void tick() {
         super.tick();
 
-        // Создаем локальную копию списка для безопасной итерации при пересборке компонентов
-        List<IAnomalyComponent> safeComponents = new ArrayList<>(this.components);
+        // Итерация по готовому массиву-снапшоту без создания new ArrayList<>()
+        IAnomalyComponent[] safeComponents = this.activeComponents;
 
         if (this.level().isClientSide) {
             for (IAnomalyComponent component : safeComponents) {
@@ -124,22 +129,27 @@ public class AnomalyEntity extends Entity {
         if (!type.isEmpty()) {
             ZoneFactory.applyComponents(this, type, getCurrentState());
         }
+        // Обновляем снапшот-массив после наполнения списка компонентов
+        this.activeComponents = this.components.toArray(new IAnomalyComponent[0]);
     }
 
     @Override
     protected void readAdditionalSaveData(CompoundTag tag) {
+        // Сначала зачитываем все данные в поля сущности без лишних пересборок
         if (tag.contains("AnomalyType")) {
             this.entityData.set(ANOMALY_TYPE, tag.getString("AnomalyType"));
         }
 
         if (tag.contains("CurrentState")) {
-            this.entityData.set(CURRENT_STATE, tag.getString("CurrentState"));
+            String state = tag.getString("CurrentState");
+            this.entityData.set(CURRENT_STATE, state.isEmpty() ? "idle" : state.toLowerCase());
         }
 
         if (tag.contains("CustomOverrides")) {
             this.customOverrides = tag.getCompound("CustomOverrides");
         }
 
+        // И только когда весь NBT полностью готов — делаем ОДИН итоговый rebuild
         rebuildComponents();
     }
 
