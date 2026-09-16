@@ -207,7 +207,7 @@ net.void_.anomalies
 * Наследует `SimpleJsonResourceReloadListener`.
 * **Статический реестр:** Вложенная карта `Map<String, AnomalyDefinition Map<String,>> REGISTRY` (Тип -> Состояние -> Конфиг).
 * **Загрузка датапаков (`apply`):**
-1. Парсит структуру папок. Файлы вида `anomalies/zharka/idle.json` ложатся по ключам `zharka` -> `idle`.
+1. Парсит структуру папок. Файлы вида `anomalies/zharka/states/idle.json` ложатся по ключам `zharka` -> `idle`.
 2. **Фоллбэк для легаси:** Если найден файл `anomalies/zharka.json` (без подпапки), он автоматически регистрируется как состояние `idle` для типа `zharka`. Старые датапаки не ломаются.
 
 * **Публичный интерфейс:**
@@ -584,7 +584,7 @@ net.void_.anomalies
 * **Класс:** `AnomalyScriptModel` (имплементирует `api.behavior.IAnomalyStateBehavior`)
 * **Назначение:** Исполняемый runtime-скрипт аномалии. Хранит связки фаз с конфигурациями, графы переходов и выполняет роль стейт-машины при тике сущности.
 * **Поля:**
-* `Map<String, String> binds` — маппинг имени состояния на путь к JSON-файлу его конфигурации (например, `"idle" -> "anomalies/zharka/idle.json"`).
+* `Map<String, String> binds` — маппинг имени состояния на относительный путь к JSON-файлу фазы в папке `states/` (например, `"idle" -> "idle.json"`).
 * `Map<String, List<TransitionRule>> transitions` — граф переходов (состояние -> список правил `TransitionRule`).
 * `String initialState` — стартовое состояние жизненного цикла (по умолчанию `"idle"`).
 
@@ -676,28 +676,30 @@ net.void_.anomalies
 * **Назначение:** AST-посетитель (Visitor) дерева разбора ANTLR. Преобразует синтаксическое дерево файла `.anom` в исполняемую модель `AnomalyScriptModel` и вложенные узлы `ICondition`.
 
 * **Технические детали:**
-* `visitScript`: главный входной метод. Итерируется по инструкциям файла (`StatementContext`), наполняет маппинг `binds`, задает `initialState` и транслирует блоки `stateBlock` в списки правил `TransitionRule`.
+* `visitScript`: главный входной метод. Итерируется по инструкциям файла (`StatementContext`), извлекает относительные имена файлов фаз (с обязательным расширением `.json`), наполняет маппинг `binds`, задает `initialState` и транслирует блоки `stateBlock` в списки правил `TransitionRule`.
 * `visitParenExpr`, `visitNotExpr`, `visitAndExpr`, `visitOrExpr`: создают логические узлы AST (`NotCondition`, `AndCondition`, `OrCondition`) с рекурсивным обходом поддеревьев.
 * `visitTimerCondition` / `visitChanceCondition`: считывают примитивные значения из токенов и формируют `TimerCondition` и `ChanceCondition`.
-* `visitPlayerZoneCondition`: очищает кавычки имени зоны, считывает имя события и приводит его к enum `ZoneEventType` (`entered_zone` -> `ENTERED`, `exited_zone` -> `EXITED`, `in_zone` -> `IN_ZONE`).При неизвестном типе события выбрасывает `IllegalArgumentException`.
+* `visitPlayerZoneCondition`: гибко считывает идентификатор зоны (поддерживает как целочисленный `INT`, так и строковый `STRING_LITERAL`), безопасно снимает кавычки при их наличии и привязывает событие к enum `ZoneEventType` (`entered_zone` -> `ENTERED`, `exited_zone` -> `EXITED`, `in_zone` -> `IN_ZONE`). При неизвестном типе события выбрасывает `IllegalArgumentException`.
 
 * **Связи:** `AnomalyDSLBaseVisitor`, `AnomalyDSLParser`, `AnomalyScriptModel`, `TransitionRule`, `ICondition`, `ZoneEventType`.
 
 #### `AnomalyScriptLoader` (`dsl.loader`)
 
 * **Класс:** `AnomalyScriptLoader` (имплементирует `PreparableReloadListener`)
-* **Назначение:** Асинхронный датапак-загрузчик DSL-скриптов с расширением `.anom` из каталога `data/<mod_id>/anomalies/`.
+* **Назначение:** Асинхронный датапак-загрузчик DSL-скриптов с расширением `.anom` из именных папок по пути `data/<mod_id>/anomalies/<folder_name>/`.
 
 * **Технические детали:**
 * **Двухфазная загрузка (`reload`):**
-1. **Асинхронная фаза (`loadScripts`):** сканирует ресурсы датапаков на файлы `.anom` через `ResourceManager`. Для каждого файла запускает лексер ANTLR (`AnomalyDSLLexer`) и парсер (`AnomalyDSLParser`), после чего передает дерево разбора в `AnomalyAstBuilder`. Имя типа аномалии автоматически извлекается из имени файла (например, `zharka.anom` -> `"zharka"`).
-2. **Синхронная фаза (`apply`):** очищает `AnomalyScriptRegistry.clear()`, выполняет валидацию связок фаз `validateScriptBinds` и регистрирует новые скрипты в `AnomalyScriptRegistry`.
+1. **Асинхронная фаза (`loadScripts`):** Сканирует каталоги датапаков. Имя типа аномалии определяется строго по имени ее родительской папки (`folder_name`). Внутри папки ищется строго файл `<folder_name>.anom`. Для него запускается лексер ANTLR (`AnomalyDSLLexer`) и парсер (`AnomalyDSLParser`), после чего дерево передается в `AnomalyAstBuilder`.
+2. **Синхронная фаза (`apply`):** Очищает `AnomalyScriptRegistry.clear()`, выполняет строгую валидацию связок фаз (`validateScriptBinds`) и регистрирует скрипты в `AnomalyScriptRegistry`.
 
-* **Валидация (`validateScriptBinds`):** проверяет соответствие декларированных в DSL связок (`binds`) реальным загруженным JSON-конфигурациям из `AnomalyReloadListener`. При отсутствии совпадения выводит предупреждение в лог (`LOGGER.warn`).
+* **Валидация и жесткие правила структуры:**
+* **CRITICAL ERROR:** Попытка разместить `.anom` файлы в корне папки `anomalies/` блокирует их загрузку с записью `CRITICAL ERROR` в лог.
+* **CRITICAL ERROR:** Отсутствие файла `<folder_name>.anom` внутри именной папки аномалии вызывает ошибку валидации.
+* **WARNING при дубликатах:** Если в папке находится несколько файлов `.anom`, исполняется только совпавший `<folder_name>.anom`, а прочие игнорируются с `LOGGER.warn`.
+* **Валидация путей `validateScriptBinds`:** Проверяет наличие обязательного расширения `.json` в DSL-привязках. При его отсутствии выбрасывается `CRITICAL ERROR`. Если целевой JSON-файл не найден в подпапке `states/`, генерируется `LOGGER.warn`, а система настраивает fallback на состояние `idle`.
 
 * **Связи:** `PreparableReloadListener`, `ResourceManager`, `AnomalyDSLLexer`, `AnomalyDSLParser`, `AnomalyAstBuilder`, `AnomalyScriptModel`, `AnomalyScriptRegistry`, `AnomalyReloadListener`.
-
----
 
 ### 8.4. Контекст Исполнения и Кэширование (`dsl.context`, `dsl.cache`)
 

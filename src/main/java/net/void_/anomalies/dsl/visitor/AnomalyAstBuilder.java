@@ -78,7 +78,11 @@ public class AnomalyAstBuilder extends AnomalyDSLBaseVisitor<Object> {
     public ICondition visitPlayerZoneCondition(AnomalyDSLParser.PlayerZoneConditionContext ctx) {
         String event = ctx.eventName.getText().toLowerCase();
         String rawZone = ctx.zone.getText();
-        String zoneName = rawZone.substring(1, rawZone.length() - 1);
+
+        // Снимаем кавычки, если передана строка, или берем целое число как есть
+        String zoneName = (rawZone.startsWith("\"") && rawZone.endsWith("\""))
+                ? rawZone.substring(1, rawZone.length() - 1)
+                : rawZone;
 
         ZoneEventType type = switch (event) {
             case "entered_zone" -> ZoneEventType.ENTERED;

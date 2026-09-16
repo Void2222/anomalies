@@ -40,31 +40,59 @@ public class AnomalyScriptLoader implements PreparableReloadListener {
     private Map<String, AnomalyScriptModel> loadScripts(ResourceManager resourceManager) {
         Map<String, AnomalyScriptModel> parsedScripts = new HashMap<>();
 
-        // Сканируем датапаки на наличие файлов .anom в папке data/<mod>/anomalies/
         Map<ResourceLocation, Resource> resources =
                 resourceManager.listResources("anomalies", location -> location.getPath().endsWith(".anom"));
 
+        // Группируем найденные файлы по папкам аномалий
+        Map<String, Map<String, Resource>> folderToScripts = new HashMap<>();
+
         resources.forEach((location, resource) -> {
-            try (InputStream stream = resource.open()) {
+            String path = location.getPath(); // Напр: "smart_zharka/smart_zharka.anom"
+            String[] parts = path.split("/");
+
+            if (parts.length < 2) {
+                LOGGER.error("CRITICAL DSL ERROR: Root file '{}' is invalid! All .anom scripts must be inside a folder (e.g. anomalies/<folder>/<folder>.anom)", path);
+                return;
+            }
+
+            String folderName = parts[0].toLowerCase();
+            String fileName = parts[parts.length - 1].toLowerCase();
+
+            folderToScripts.computeIfAbsent(folderName, k -> new HashMap<>()).put(fileName, resource);
+        });
+
+        // Строгая валидация файлов внутри папок
+        folderToScripts.forEach((folderName, files) -> {
+            String expectedFileName = folderName + ".anom";
+
+            // 1. Ошибка: Нужный скрипт отсутствует
+            if (!files.containsKey(expectedFileName)) {
+                LOGGER.error("CRITICAL DSL ERROR: Folder 'anomalies/{}' is missing required script '{}.anom'! Found unmatched files: {}",
+                        folderName, folderName, files.keySet());
+                return;
+            }
+
+            // 2. Предупреждение: Несколько скриптов в одной папке
+            if (files.size() > 1) {
+                LOGGER.warn("DSL WARNING: Folder 'anomalies/{}' contains multiple .anom files: {}. Executing expected '{}' and ignoring others.",
+                        folderName, files.keySet(), expectedFileName);
+            }
+
+            // Парсинг целевого скрипта
+            Resource scriptResource = files.get(expectedFileName);
+            try (InputStream stream = scriptResource.open()) {
                 String content = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
 
-                // Лексический и синтаксический анализ ANTLR
                 AnomalyDSLLexer lexer = new AnomalyDSLLexer(CharStreams.fromString(content));
                 CommonTokenStream tokens = new CommonTokenStream(lexer);
                 AnomalyDSLParser parser = new AnomalyDSLParser(tokens);
 
-                // Запускаем наш AnomalyAstBuilder для обхода ParseTree и генерации AST
                 AnomalyAstBuilder astBuilder = new AnomalyAstBuilder();
                 AnomalyScriptModel scriptModel = astBuilder.visitScript(parser.script());
 
-                // Извлекаем имя аномалии из пути: data/void/anomalies/zharka.anom -> "zharka"
-                String path = location.getPath();
-                String fileName = path.substring(path.lastIndexOf('/') + 1);
-                String anomalyType = fileName.substring(0, fileName.lastIndexOf('.')).toLowerCase();
-
-                parsedScripts.put(anomalyType, scriptModel);
+                parsedScripts.put(folderName, scriptModel);
             } catch (Exception e) {
-                LOGGER.error("CRITICAL: Failed to parse anomaly DSL script at {}", location, e);
+                LOGGER.error("CRITICAL DSL ERROR: Failed to parse '{}' in folder '{}'", expectedFileName, folderName, e);
             }
         });
 
@@ -83,9 +111,16 @@ public class AnomalyScriptLoader implements PreparableReloadListener {
 
     private void validateScriptBinds(String anomalyType, AnomalyScriptModel script) {
         script.getBinds().forEach((state, jsonPath) -> {
-            if (!AnomalyReloadListener.hasState(anomalyType, state)) {
-                LOGGER.warn("DSL validation warning for '{}': State '{}' binds to '{}', but target JSON definition was not found!",
+            // Строгое требование расширения .json
+            if (!jsonPath.toLowerCase().endsWith(".json")) {
+                LOGGER.error("CRITICAL DSL ERROR for '{}': State '{}' binds to '{}'. Path MUST explicitly specify '.json' extension!",
                         anomalyType, state, jsonPath);
+                return;
+            }
+
+            if (!AnomalyReloadListener.hasState(anomalyType, state)) {
+                LOGGER.warn("DSL validation warning for '{}': State '{}' binds to '{}', but target JSON definition was not found in 'states/{}'!",
+                        anomalyType, state, jsonPath, jsonPath);
             }
         });
     }

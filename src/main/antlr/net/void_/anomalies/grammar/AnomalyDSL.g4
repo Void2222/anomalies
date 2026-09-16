@@ -47,7 +47,7 @@ expression
 primaryCondition
     : TIMER '(' ticks=INT ')'                           # TimerCondition
     | CHANCE '(' chanceVal=NUMBER ')'                   # ChanceCondition
-    | PLAYER '.' eventName=ID '(' zone=STRING_LITERAL ')' # PlayerZoneCondition
+    | PLAYER '.' eventName=ID '(' zone=(INT | STRING_LITERAL) ')' # PlayerZoneCondition
     ;
 
 // ==========================================

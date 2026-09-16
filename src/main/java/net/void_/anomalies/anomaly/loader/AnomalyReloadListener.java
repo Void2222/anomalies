@@ -23,7 +23,6 @@ public class AnomalyReloadListener extends SimpleJsonResourceReloadListener {
             .registerTypeAdapter(MinMaxRange.class, new MinMaxRange.Deserializer())
             .create();
 
-    // 🌟 Двухуровневое хранилище: type -> (state -> AnomalyDefinition)
     private static final Map<String, Map<String, AnomalyDefinition>> REGISTRY = new HashMap<>();
 
     public AnomalyReloadListener() {
@@ -41,17 +40,26 @@ public class AnomalyReloadListener extends SimpleJsonResourceReloadListener {
                 String[] parts = path.split("/");
 
                 String type;
-                String state;
+                String rawFileName;
 
-                if (parts.length == 1) {
-                    // Старый формат: data/<mod>/anomalies/zharka.json -> type="zharka", state="idle"
+                if (parts.length >= 3 && parts[1].equals("states")) {
+                    // Новый стандарт: data/<mod>/anomalies/smart_zharka/states/idle.json
                     type = parts[0];
-                    state = "idle";
+                    rawFileName = parts[2];
+                } else if (parts.length == 2) {
+                    // Папочный legacy: data/<mod>/anomalies/smart_zharka/idle.json
+                    type = parts[0];
+                    rawFileName = parts[1];
                 } else {
-                    // Новый формат: data/<mod>/anomalies/zharka/idle.json -> type="zharka", state="idle"
+                    // Однофайловый legacy: data/<mod>/anomalies/zharka.json
                     type = parts[0];
-                    state = parts[1];
+                    rawFileName = "idle.json";
                 }
+
+                // Извлекаем имя состояния без расширения .json
+                String state = rawFileName.endsWith(".json")
+                        ? rawFileName.substring(0, rawFileName.length() - 5)
+                        : rawFileName;
 
                 REGISTRY.computeIfAbsent(type, k -> new HashMap<>()).put(state, definition);
             } catch (Exception e) {
@@ -60,9 +68,6 @@ public class AnomalyReloadListener extends SimpleJsonResourceReloadListener {
         });
     }
 
-    /**
-     * Получить определение для конкретного состояния аномалии
-     */
     public static AnomalyDefinition get(String type, String state) {
         if (type == null) return null;
         Map<String, AnomalyDefinition> states = REGISTRY.get(type.toLowerCase());
@@ -72,16 +77,12 @@ public class AnomalyReloadListener extends SimpleJsonResourceReloadListener {
             return states.get(state.toLowerCase());
         }
 
-        // Фоллбэк: если запрошенного состояния нет, пытаемся отдать "idle", либо первичное попавшееся
         if (states.containsKey("idle")) {
             return states.get("idle");
         }
         return states.values().stream().findFirst().orElse(null);
     }
 
-    /**
-     * Фоллбэк-метод для получения начального ("idle") состояния
-     */
     public static AnomalyDefinition get(String type) {
         return get(type, "idle");
     }
