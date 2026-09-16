@@ -75,6 +75,15 @@ public class TransientZoneCache {
         return snapshot;
     }
 
+    // Очищаем только одноразовые события (ENTERED/EXITED), сохраняя активные зоны
+    public static void flushTickEvents(AnomalyEntity anomaly) {
+        AnomalyCacheData data = CACHE.get(anomaly.getUUID());
+        if (data != null) {
+            data.tickEvents.clear();
+        }
+    }
+
+    // Полный сброс (вызывается только при деспавне/уничтожении аномалии)
     public static void clear(AnomalyEntity anomaly) {
         CACHE.remove(anomaly.getUUID());
     }

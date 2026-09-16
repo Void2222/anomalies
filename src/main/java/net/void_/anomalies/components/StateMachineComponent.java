@@ -33,12 +33,11 @@ public class StateMachineComponent implements IAnomalyComponent {
         if (nextState != null && !nextState.equalsIgnoreCase(anomaly.getCurrentState())) {
             behavior.onExit(anomaly);
 
-            // Сбрасываем счетчик тиков и флаг инициализации для нового состояния
             this.ticksInState = 0;
             this.initialized = false;
 
-            // Сбрасываем кэш одноразовых ивентов тика при смене фазы
-            TransientZoneCache.clear(anomaly);
+            // Сбрасываем ТОЛЬКО одноразовые ивенты (ENTERED/EXITED), activeZones остаются!
+            TransientZoneCache.flushTickEvents(anomaly);
 
             anomaly.setCurrentState(nextState);
         }

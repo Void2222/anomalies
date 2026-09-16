@@ -52,7 +52,8 @@ public class AnomalyReloadListener extends SimpleJsonResourceReloadListener {
                     rawFileName = parts[1];
                 } else {
                     // Однофайловый legacy: data/<mod>/anomalies/zharka.json
-                    type = parts[0];
+                    String fileName = parts[0];
+                    type = fileName.endsWith(".json") ? fileName.substring(0, fileName.length() - 5) : fileName;
                     rawFileName = "idle.json";
                 }
 

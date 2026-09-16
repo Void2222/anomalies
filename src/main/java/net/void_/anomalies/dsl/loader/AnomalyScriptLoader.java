@@ -45,17 +45,19 @@ public class AnomalyScriptLoader implements PreparableReloadListener {
 
         // Группируем найденные файлы по папкам аномалий
         Map<String, Map<String, Resource>> folderToScripts = new HashMap<>();
-
         resources.forEach((location, resource) -> {
-            String path = location.getPath(); // Напр: "smart_zharka/smart_zharka.anom"
+            String path = location.getPath(); // Напр: "anomalies/smart_zharka/smart_zharka.anom"
             String[] parts = path.split("/");
 
-            if (parts.length < 2) {
+            // Если путь начинается с "anomalies", папка аномалии находится на позиции 1, иначе на 0
+            int folderIndex = (parts.length > 0 && parts[0].equalsIgnoreCase("anomalies")) ? 1 : 0;
+
+            if (parts.length <= folderIndex + 1) {
                 LOGGER.error("CRITICAL DSL ERROR: Root file '{}' is invalid! All .anom scripts must be inside a folder (e.g. anomalies/<folder>/<folder>.anom)", path);
                 return;
             }
 
-            String folderName = parts[0].toLowerCase();
+            String folderName = parts[folderIndex].toLowerCase();
             String fileName = parts[parts.length - 1].toLowerCase();
 
             folderToScripts.computeIfAbsent(folderName, k -> new HashMap<>()).put(fileName, resource);
