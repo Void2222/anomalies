@@ -311,22 +311,24 @@ net.void_.anomalies
 ### 4.3. `ParticleComponent` (`components.ParticleComponent`)
 
 * **Класс:** `ParticleComponent` (имплементирует `IAnomalyComponent`)
-* **Назначение:** Клиентский компонент генерации частиц заданной геометрической формы с оптимизацией производительности, мгновенной реакцией на смену фаз и защитой от зацикливания.
+* **Назначение:** Клиентский компонент генерации частиц заданной геометрической формы с двухуровневой системой Culling-фильтрации (Frustum + Occlusion) для максимального экономии ресурсов CPU.
 * **Технические детали:**
 * **Перечисление `Shape`:** `SPHERE`, `CYLINDER`, `DISC`.
-* **Константа дистанции рендеринга:** `RENDER_DISTANCE_SQ = 4900.0D` (70² блоков).
-* **Клиентский LOD (Level of Detail):** В `clientTick()` проверяет расстояние до `Minecraft.getInstance().player`. Если игрок находится дальше 70 блоков — спавн частиц отменяется.
-* **Мгновенный старт и безопасный таймер:**
-* В конструкторе выставляется `nextTriggerTick = 0`, обеспечивая спавн визуала **сразу на первом же тике (0-й тик)** при инициализации новой фазы.
-* При наступлении срабатывания следующий интервал вычисляется как `nextTriggerTick = Math.max(1, intervalRange.getInt())`, что полностью исключает нулевые интервалы и предотвращает микрофризы клиента.
+* **Константа LOD-расстояния:** `RENDER_DISTANCE_SQ = 4900.0D` (70² блоков).
+* **Слой 1 — Frustum Culling (Конус видимости):** В `clientTick()` считывает актуальный `Frustum` из `ClientSetup.getLatestFrustum()`. Вычисляет объемный AABB аномалии с учетом спавна частиц (`inflate(radius, height * 0.5, radius)`). Если аномалия за спиной или вне экрана — выполнение тика мгновенно прекращается.
+* **Слой 2 — Occlusion Culling (Проверка за стенами):** Выполняет проверку видимости за сплошными блоками с интервалом `OCCLUSION_CHECK_INTERVAL = 8` тиков (~0.4 сек):
+* **Распределенная нагрузка:** Начальное значение `occlusionCheckTimer` рандомизируется в конструкторе (`0..7`), равномерно распределяя рейкасты разных аномалий по кадрам без пиковых фризов.
+* **Bypass вплотную:** Если игрок находится внутри или на границе аномалии (`distanceSq <= effectRadiusSq`), рейкаст автоматически отключается (`isOccluded = false`).
+* **Короткий рейкаст:** Проводит `ClipContext` (`Block.COLLIDER`, `Fluid.NONE`) от позиции камеры до центра аномалии. При столкновении со сплошным блоком выставляет `isOccluded = true`.
 
-* **Оптимизация Loop Unswitching:** Проверка `switch (shape)` вынесена за пределы цикла спавна, исключая ветвления внутри итераций.
-* **Оптимизация Rejection Sampling и защита от зацикливания:** Точки внутри объемов генерируются с помощью циклов `do-while` на примитивах без использования тяжелых тригонометрических функций (`Math.sin`, `Math.cos`). Каждая итерация ограничена счетчиком попыток (`attempts < 10`), что гарантирует защиту потока рендеринга от бесконечных циклов:
-* **`SPHERE`:** Отбраковка по `rx² + ry² + rz² > 1.0`. Спавн с базовым импульсом по оси Y = 0.02.
-* **`CYLINDER`:** Отбраковка по `rx² + rz² > 1.0`, случайная высота Y в пределах `random.nextDouble() * height`. Базовый импульс по оси Y = 0.05.
-* **`DISC`:** Отбраковка по `rx² + rz² > 1.0`, случайное смещение Y в пределах ±0.05. Базовый импульс по оси Y = 0.01.
+* **Мгновенный старт и защитный таймер:** В конструкторе `nextTriggerTick = 0` (спавн на 0-м тике новой фазы). Следующая пауза рассчитывается как `Math.max(1, intervalRange.getInt())`, защищая клиент от зацикливания.
+* **Оптимизация Loop Unswitching:** Проверка `switch (shape)` вынесена за пределы цикла генерации частиц.
+* **Rejection Sampling с лимитом:** Точки генерируются циклами `do-while` на примитивах без вызова тригонометрии (`Math.sin`/`cos`) с защитным ограничением `attempts < 10`:
+* **`SPHERE`:** Отбраковка `rx² + ry² + rz² > 1.0`. Спавн с базовым импульсом Y = 0.02.
+* **`CYLINDER`:** Отбраковка `rx² + rz² > 1.0`, случайная высота Y в пределах `[0..height]`. Базовый импульс Y = 0.05.
+* **`DISC`:** Отбраковка `rx² + rz² > 1.0`, микро-смещение Y в пределах ±0.05. Базовый импульс Y = 0.01.
 
-* **Связи:** `ParticleOptions`, `MinMaxRange`, `Minecraft`, `AnomalyEntity`, `Level`.
+* **Связи:** `ParticleOptions`, `MinMaxRange`, `Minecraft`, `AnomalyEntity`, `Level`, `ClientSetup`, `Frustum`, `ClipContext`.
 
 ---
 
@@ -505,13 +507,13 @@ net.void_.anomalies
 
 *Пакет:* `net.void_.anomalies.client`
 
-### 6.1. Невидимый Рендерер Сущности
+### 6.1. Невидимый Рендерер Сущности (`client.AnomalyRenderer`)
 
 * **Класс:** `AnomalyRenderer` (расширяет `EntityRenderer<AnomalyEntity>`)
-* **Назначение:** Отключение стандартной трехмерной полигональной модели сущности при сохранении активного клиенского тикинга.
+* **Назначение:** Отключение стандартной трехмерной полигональной модели сущности при сохранении активного клиентского тикинга компонентов.
 * **Технические детали:**
 * **Текстура-заглушка:** `getTextureLocation()` возвращает путь `anomalies:textures/entity/anomaly.png`.
-* **Управление видимостью (`shouldRender`):** Метод явно возвращает `true`. Это предотвращает отсечение (culling) сущности движком рендеринга Minecraft и гарантирует постоянное исполнение клиентских компонентов (`ParticleComponent`, `SoundComponent`), несмотря на отсутствие физической геометрии или полигональной модели.
+* **Управление видимостью (`shouldRender`):** Метод явно возвращает `true`. Это предотвращает отсечение (culling) самой сущности движком рендеринга Minecraft и гарантирует постоянный вызов `clientTick()` у компонентов (`ParticleComponent`, `SoundComponent`). Локальное отсечение видимости визуала вынесено непосредственно внутрь `ParticleComponent`, чтобы не затыкать воспроизведение пространственного звука за стеной.
 
 * **Связи:** `EntityRenderer`, `AnomalyEntity`, `ParticleComponent`, `SoundComponent`.
 
@@ -520,15 +522,14 @@ net.void_.anomalies
 ### 6.2. Регистратор Клиентской Части (`client.ClientSetup`)
 
 * **Класс:** `ClientSetup`
-* **Назначение:** Привязка визуализаторов сущностей на стороне клиента.
+* **Назначение:** Регистрация визуализаторов сущностей на стороне клиента и перехват матрицы видимости `Frustum` для работы оптимизатора частиц.
 * **Технические детали:**
-* Помечен аннотацией `@Mod.EventBusSubscriber(modid = "anomalies", value = Dist.CLIENT, bus = Bus.MOD)`.
-* **Перехват события (`registerRenderers`):** Подписан на `EntityRenderersEvent.RegisterRenderers` на шине мода.
-* Связывает зарегистрированный тип сущности `EntityInit.ANOMALY.get()` с пустой моделью рендерера `AnomalyRenderer::new`.
+* **Потокобезопасный кэш `Frustum`:** Содержит `private static volatile Frustum latestFrustum` и публичный геттер `getLatestFrustum()`.
+* **Разделение шин событий (`EventBus`):**
+* **`ModBusEvents`** (`@Mod.EventBusSubscriber(bus = Bus.MOD, value = Dist.CLIENT)`): Подписан на `EntityRenderersEvent.RegisterRenderers`. Связывает зарегистрированный тип `EntityInit.ANOMALY.get()` с `AnomalyRenderer::new`.
+* **`ForgeBusEvents`** (`@Mod.EventBusSubscriber(bus = Bus.FORGE, value = Dist.CLIENT)`): Подписан на `RenderLevelStageEvent`. На этапе `Stage.AFTER_PARTICLES` захватывает актуальный `Frustum` текущего кадра и сохраняет его в `latestFrustum`.
 
-* **Связи:** `EntityRenderersEvent.RegisterRenderers`, `EntityInit`, `AnomalyRenderer`, `Dist.CLIENT`.
-
----
+* **Связи:** `EntityRenderersEvent.RegisterRenderers`, `RenderLevelStageEvent`, `EntityInit`, `AnomalyRenderer`, `Frustum`, `Dist.CLIENT`.
 
 ## 7. Инициализация, Команды и Точка Входа (`setup` / `root`)
 

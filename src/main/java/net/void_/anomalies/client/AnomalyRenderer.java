@@ -17,7 +17,6 @@ public class AnomalyRenderer extends EntityRenderer<AnomalyEntity> {
         return ResourceLocation.fromNamespaceAndPath("anomalies", "textures/entity/anomaly.png");
     }
 
-    // Полностью отключаем стандартный рендеринг тела сущности (ведь у нас только партиклы!)
     @Override
     public boolean shouldRender(AnomalyEntity livingEntity, net.minecraft.client.renderer.culling.Frustum camera, double camX, double camY, double camZ) {
         // Возвращаем true, чтобы клиент не отключал логику сущности,
