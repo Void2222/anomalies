@@ -3,9 +3,9 @@ state warmup --> "warmup.json";
 state burst --> "burst.json";
 state cooldown --> "cooldown.json";
 
-recipe cook_pork --> "recipes/cook_pork.json";
-recipe roast_beef --> "recipes/roast_beef.json";
-recipe make_glass --> "recipes/make_glass.json";
+recipe cook_pork --> "cook_pork.json";
+recipe roast_beef --> "roast_beef.json";
+recipe make_glass --> "make_glass.json";
 
 initial = idle;
 
