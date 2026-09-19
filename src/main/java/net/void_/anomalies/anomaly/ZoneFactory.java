@@ -23,24 +23,28 @@ import net.void_.anomalies.anomaly.util.ZoneUtils;
 import net.void_.anomalies.components.*;
 import net.void_.anomalies.config.AnomalyIgnoreManager;
 import net.void_.anomalies.core.AnomalyEntity;
+import net.void_.anomalies.dsl.model.AnomalyScriptModel;
+import net.void_.anomalies.dsl.registry.AnomalyScriptRegistry;
 import net.void_.anomalies.setup.EntityInit;
 
 import java.util.List;
+import java.util.Optional;
 
 public class ZoneFactory {
 
-    /**
-     * Сборка и навешивание компонентов под конкретное состояние аномалии
-     */
     public static void applyComponents(AnomalyEntity anomaly, String type, String state) {
         AnomalyDefinition definition = AnomalyReloadListener.get(type, state);
         if (definition == null) return;
 
         anomaly.addComponent(new SnapToGridComponent());
 
-        // На сервере добавляем оркестратор состояний
         if (!anomaly.level().isClientSide) {
             anomaly.addComponent(new StateMachineComponent(type));
+
+            Optional<AnomalyScriptModel> script = AnomalyScriptRegistry.get(type);
+            if (script.isPresent() && !script.get().getRecipesForState(state).isEmpty()) {
+                anomaly.addComponent(new RecipeProcessorComponent());
+            }
         }
 
         CompoundTag overrides = anomaly.getCustomOverrides();
@@ -71,7 +75,8 @@ public class ZoneFactory {
             MinMaxRange interval = OverrideHelper.getParticleInterval(overrides, pConfig);
             MinMaxRange count = OverrideHelper.getParticleCount(overrides, pConfig);
 
-            ParticleType<?> particleType = BuiltInRegistries.PARTICLE_TYPE.get(ResourceLocation.parse(pConfig.type()));
+            // Исправлено под 1.20.1
+            ParticleType<?> particleType = BuiltInRegistries.PARTICLE_TYPE.get(new ResourceLocation(pConfig.type()));
             ParticleOptions options = (particleType instanceof ParticleOptions opt) ? opt : ParticleTypes.FLAME;
 
             ParticleComponent.Shape parsedShape;
@@ -92,7 +97,8 @@ public class ZoneFactory {
         float pitch = overrides.contains("soundPitch") ? (float) overrides.getDouble("soundPitch") : soundConfig.pitch();
         MinMaxRange soundInterval = OverrideHelper.getSoundInterval(overrides, soundConfig);
 
-        ResourceLocation loc = ResourceLocation.parse(soundConfig.event());
+        // Исправлено под 1.20.1
+        ResourceLocation loc = new ResourceLocation(soundConfig.event());
         SoundEvent soundEvent = BuiltInRegistries.SOUND_EVENT.get(loc);
         if (soundEvent == null) soundEvent = SoundEvent.createVariableRangeEvent(loc);
 
@@ -111,7 +117,6 @@ public class ZoneFactory {
         PhysicsConfig generalPhysics = definition.physics();
         boolean ignoreAnomalies = Boolean.TRUE.equals(definition.ignoreOtherAnomalies());
 
-        // 1. Рассчитываем авто-радиус триггера как макс. радиус зон или берём оверрайд
         double maxZoneRadius = zones.stream()
                 .mapToDouble(ZoneConfig::radius)
                 .max()
@@ -121,7 +126,6 @@ public class ZoneFactory {
                 ? overrides.getDouble("expandRadius")
                 : maxZoneRadius;
 
-        // По умолчанию тикаем каждый тик (1, 1), чтобы зонный инспект работал отзывчиво
         MinMaxRange triggerInterval = new MinMaxRange(1, 1);
 
         DamageSource defaultDamageSource = anomaly.level().damageSources().generic();
@@ -141,14 +145,12 @@ public class ZoneFactory {
             impulseComp = null;
         }
 
-        // Автоматически навешиваем триггер-сканер без зависимости от TriggerConfig
         anomaly.addComponent(new TriggerComponent(expandRadius, triggerInterval,
                 (anom, target) -> handleTriggerTarget(anom, target, impulseComp, damageComp, zones, ignoreAnomalies)));
     }
 
     private static void handleTriggerTarget(AnomalyEntity anomaly, Entity target, ImpulseComponent impulseComp, DamageComponent damageComp, List<ZoneConfig> zones, boolean ignoreAnomalies) {
         if (ignoreAnomalies && target instanceof AnomalyEntity) return;
-
         if (target instanceof Player player && AnomalyIgnoreManager.isIgnored(player)) return;
 
         if (impulseComp != null) {

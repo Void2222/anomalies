@@ -1,0 +1,13 @@
+{
+  "inputs": [
+    {
+      "item": "minecraft:sand",
+      "count": 1
+    }
+  ],
+  "output": {
+    "item": "minecraft:glass",
+    "count": 1
+  },
+  "time": 25
+}

@@ -43,13 +43,11 @@ public class AnomalyScriptLoader implements PreparableReloadListener {
         Map<ResourceLocation, Resource> resources =
                 resourceManager.listResources("anomalies", location -> location.getPath().endsWith(".anom"));
 
-        // Группируем найденные файлы по папкам аномалий
         Map<String, Map<String, Resource>> folderToScripts = new HashMap<>();
         resources.forEach((location, resource) -> {
-            String path = location.getPath(); // Напр: "anomalies/smart_zharka/smart_zharka.anom"
+            String path = location.getPath();
             String[] parts = path.split("/");
 
-            // Если путь начинается с "anomalies", папка аномалии находится на позиции 1, иначе на 0
             int folderIndex = (parts.length > 0 && parts[0].equalsIgnoreCase("anomalies")) ? 1 : 0;
 
             if (parts.length <= folderIndex + 1) {
@@ -63,24 +61,20 @@ public class AnomalyScriptLoader implements PreparableReloadListener {
             folderToScripts.computeIfAbsent(folderName, k -> new HashMap<>()).put(fileName, resource);
         });
 
-        // Строгая валидация файлов внутри папок
         folderToScripts.forEach((folderName, files) -> {
             String expectedFileName = folderName + ".anom";
 
-            // 1. Ошибка: Нужный скрипт отсутствует
             if (!files.containsKey(expectedFileName)) {
                 LOGGER.error("CRITICAL DSL ERROR: Folder 'anomalies/{}' is missing required script '{}.anom'! Found unmatched files: {}",
                         folderName, folderName, files.keySet());
                 return;
             }
 
-            // 2. Предупреждение: Несколько скриптов в одной папке
             if (files.size() > 1) {
                 LOGGER.warn("DSL WARNING: Folder 'anomalies/{}' contains multiple .anom files: {}. Executing expected '{}' and ignoring others.",
                         folderName, files.keySet(), expectedFileName);
             }
 
-            // Парсинг целевого скрипта
             Resource scriptResource = files.get(expectedFileName);
             try (InputStream stream = scriptResource.open()) {
                 String content = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
@@ -112,8 +106,8 @@ public class AnomalyScriptLoader implements PreparableReloadListener {
     }
 
     private void validateScriptBinds(String anomalyType, AnomalyScriptModel script) {
+        // Валидация состояний
         script.getBinds().forEach((state, jsonPath) -> {
-            // Строгое требование расширения .json
             if (!jsonPath.toLowerCase().endsWith(".json")) {
                 LOGGER.error("CRITICAL DSL ERROR for '{}': State '{}' binds to '{}'. Path MUST explicitly specify '.json' extension!",
                         anomalyType, state, jsonPath);
@@ -123,6 +117,20 @@ public class AnomalyScriptLoader implements PreparableReloadListener {
             if (!AnomalyReloadListener.hasState(anomalyType, state)) {
                 LOGGER.warn("DSL validation warning for '{}': State '{}' binds to '{}', but target JSON definition was not found in 'states/{}'!",
                         anomalyType, state, jsonPath, jsonPath);
+            }
+        });
+
+        // Валидация рецептов через валидный метод AnomalyReloadListener.hasRecipe
+        script.getRecipeBinds().forEach((recipeName, jsonPath) -> {
+            if (!jsonPath.toLowerCase().endsWith(".json")) {
+                LOGGER.error("CRITICAL DSL ERROR for '{}': Recipe '{}' binds to '{}'. Path MUST explicitly specify '.json' extension!",
+                        anomalyType, recipeName, jsonPath);
+                return;
+            }
+
+            if (!AnomalyReloadListener.hasRecipe(anomalyType, recipeName)) {
+                LOGGER.warn("DSL validation warning for '{}': Recipe '{}' binds to '{}', but target recipe JSON was not found in RECIPE_REGISTRY!",
+                        anomalyType, recipeName, jsonPath);
             }
         });
     }

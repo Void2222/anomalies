@@ -3,6 +3,10 @@ state warmup --> "warmup.json";
 state burst --> "burst.json";
 state cooldown --> "cooldown.json";
 
+recipe cook_pork --> "recipes/cook_pork.json";
+recipe roast_beef --> "recipes/roast_beef.json";
+recipe make_glass --> "recipes/make_glass.json";
+
 initial = idle;
 
 state idle {
@@ -14,7 +18,12 @@ state warmup {
 }
 
 state burst {
-    when timer(30) -> cooldown;
+    recipe {
+        cook_pork;
+        roast_beef;
+        make_glass;
+    }
+    when timer(50) -> cooldown;
 }
 
 state cooldown {

@@ -24,17 +24,14 @@ public class Anomalies {
     public static final String MOD_ID = "anomalies";
     private static final Logger LOGGER = LogUtils.getLogger();
 
-    // Создаем реестр для предметов
     public static final DeferredRegister<Item> ITEMS = DeferredRegister.create(ForgeRegistries.ITEMS, MOD_ID);
 
-    // Регистрируем наш мультитул
     public static final RegistryObject<Item> ANOMALY_MULTITOOL = ITEMS.register("anomaly_multitool",
             () -> new AnomalyMultitoolItem(new Item.Properties().stacksTo(1)));
 
     public Anomalies() {
         IEventBus modEventBus = FMLJavaModLoadingContext.get().getModEventBus();
 
-        // Регистрируем реестр предметов на шине мода
         ITEMS.register(modEventBus);
 
         modEventBus.addListener(this::commonSetup);

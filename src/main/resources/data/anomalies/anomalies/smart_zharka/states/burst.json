@@ -46,9 +46,5 @@
       }
     }
   ],
-  "physics": {
-    "impulseY": 0.15,
-    "pullToCenter": false
-  },
   "ignoreOtherAnomalies": true
 }

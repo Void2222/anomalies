@@ -47,11 +47,9 @@ public class ModifyProcessor {
 
         String shortUuid = newUuid.toString().substring(0, 8);
 
-        // 📜 Заголовок и вызов Auto-Inspect
         player.sendSystemMessage(Component.literal("============== §b[ СЕССИЯ ИЗМЕНЕНИЯ ] §r==============").withStyle(ChatFormatting.BOLD));
         player.sendSystemMessage(Component.literal("§aАномалия выбрана! (UUID: §f" + shortUuid + "...§a)"));
 
-        // Автоматический осмотр состояния аномалии при входе
         printCurrentState(player, anomaly);
 
         player.sendSystemMessage(Component.literal("§eКоманды сессии: §fshow §7(состояние) | §fhelp §7(справка) | §ftoggle <param> §7| §freset <param> §7| §fdone §7(выход)"));
@@ -83,9 +81,9 @@ public class ModifyProcessor {
 
         CompoundTag overrides = anomaly.getCustomOverrides();
         String type = anomaly.getAnomalyType();
-        AnomalyDefinition def = AnomalyReloadListener.get(type);
+        // Передаем текущее состояние аномалии
+        AnomalyDefinition def = AnomalyReloadListener.get(type, anomaly.getCurrentState());
 
-        // Команды состояния и помощи
         if (trimmed.equalsIgnoreCase("show") || trimmed.equalsIgnoreCase("list")) {
             printCurrentState(player, anomaly);
             return true;
@@ -96,7 +94,6 @@ public class ModifyProcessor {
             return true;
         }
 
-        // Инициализируем оверрайды зон из дефинишна, если их еще нет в теге
         ensureZonesInitialized(overrides, def);
 
         String[] instructions = trimmed.split(";");
@@ -110,7 +107,6 @@ public class ModifyProcessor {
             String[] parts = singleCmd.split("\\s+");
 
             try {
-                // 1. Команды точечного сброса (reset <param> / reset zone <index> / reset all)
                 if (parts[0].equalsIgnoreCase("reset")) {
                     if (parts.length >= 2) {
                         if (parts[1].equalsIgnoreCase("all")) {
@@ -137,7 +133,6 @@ public class ModifyProcessor {
                     continue;
                 }
 
-                // 2. Команды инверсии флагов (toggle <param>)
                 if (parts[0].equalsIgnoreCase("toggle")) {
                     if (parts.length >= 2) {
                         String targetParam = resolveAlias(parts[1]);
@@ -155,7 +150,6 @@ public class ModifyProcessor {
                     continue;
                 }
 
-                // 3. Обработка команд зон: zone add / zone remove / zone <index> <param> <val>
                 if (parts[0].equalsIgnoreCase("zone")) {
                     if (parts.length < 2) {
                         hasErrors = true;
@@ -233,7 +227,6 @@ public class ModifyProcessor {
                     }
                 }
 
-                // 4. Обычные глобальные параметры с Алиасами и Валидацией
                 if (parts.length != 2) {
                     hasErrors = true;
                     continue;
@@ -270,8 +263,6 @@ public class ModifyProcessor {
         tag.remove("WaitingForParams");
         tag.remove("SelectedAnomaly");
     }
-
-    // --- Вспомогательные методы ---
 
     private static String resolveAlias(String param) {
         return switch (param.toLowerCase()) {
@@ -383,7 +374,8 @@ public class ModifyProcessor {
 
     private static void printCurrentState(Player player, AnomalyEntity anomaly) {
         String type = anomaly.getAnomalyType();
-        AnomalyDefinition def = AnomalyReloadListener.get(type);
+        // Передаем текущее состояние аномалии
+        AnomalyDefinition def = AnomalyReloadListener.get(type, anomaly.getCurrentState());
         CompoundTag overrides = anomaly.getCustomOverrides();
 
         player.sendSystemMessage(Component.literal("§6📊 Текущие значения (Тип: §f" + type + "§6):"));

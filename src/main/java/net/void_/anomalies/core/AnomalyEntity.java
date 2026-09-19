@@ -13,6 +13,7 @@ import net.minecraft.world.entity.Pose;
 import net.minecraft.world.level.Level;
 import net.minecraftforge.network.NetworkHooks;
 import net.void_.anomalies.anomaly.ZoneFactory;
+import net.void_.anomalies.components.StateMachineComponent;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -27,12 +28,10 @@ public class AnomalyEntity extends Entity {
     private static final EntityDataAccessor<String> ANOMALY_TYPE =
             SynchedEntityData.defineId(AnomalyEntity.class, EntityDataSerializers.STRING);
 
-    // 🌟 НОВЫЙ КЛЮЧ СИНХРОНИЗАЦИИ СОСТОЯНИЯ
     private static final EntityDataAccessor<String> CURRENT_STATE =
             SynchedEntityData.defineId(AnomalyEntity.class, EntityDataSerializers.STRING);
 
     private final List<IAnomalyComponent> components = new ArrayList<>();
-    // Снапшот компонентов для безопасной и быстрой итерации без аллокации памяти в тике
     private volatile IAnomalyComponent[] activeComponents = new IAnomalyComponent[0];
 
     public AnomalyEntity(EntityType<?> entityType, Level level) {
@@ -43,7 +42,7 @@ public class AnomalyEntity extends Entity {
     @Override
     protected void defineSynchedData() {
         this.entityData.define(ANOMALY_TYPE, "");
-        this.entityData.define(CURRENT_STATE, "idle"); // По умолчанию всегда idle
+        this.entityData.define(CURRENT_STATE, "idle");
     }
 
     public AnomalyEntity addComponent(IAnomalyComponent component) {
@@ -60,7 +59,6 @@ public class AnomalyEntity extends Entity {
         return this.entityData.get(ANOMALY_TYPE);
     }
 
-    // 🌟 УПРАВЛЕНИЕ ТЕКУЩИМ СОСТОЯНИЕМ
     public void setCurrentState(String state) {
         String newState = (state != null && !state.isEmpty()) ? state.toLowerCase() : "idle";
         if (!getCurrentState().equals(newState)) {
@@ -96,8 +94,6 @@ public class AnomalyEntity extends Entity {
     @Override
     public void onSyncedDataUpdated(EntityDataAccessor<?> key) {
         super.onSyncedDataUpdated(key);
-        // Реакция на изменение типа ИЛИ состояния строго на КЛИЕНТЕ,
-        // чтобы исключить дублирование пересборки на сервере при entityData.set()
         if (this.level().isClientSide) {
             if (ANOMALY_TYPE.equals(key) || CURRENT_STATE.equals(key)) {
                 rebuildComponents();
@@ -109,7 +105,6 @@ public class AnomalyEntity extends Entity {
     public void tick() {
         super.tick();
 
-        // Итерация по готовому массиву-снапшоту без создания new ArrayList<>()
         IAnomalyComponent[] safeComponents = this.activeComponents;
 
         if (this.level().isClientSide) {
@@ -117,8 +112,18 @@ public class AnomalyEntity extends Entity {
                 component.clientTick(this);
             }
         } else {
+            // 1. Сначала отбатывают все обычные компоненты (включая RecipeProcessorComponent)
             for (IAnomalyComponent component : safeComponents) {
-                component.serverTick(this);
+                if (!(component instanceof StateMachineComponent)) {
+                    component.serverTick(this);
+                }
+            }
+
+            // 2. Стейт-машина строго последней: дает рецептам доделать крафт на граничном тике
+            for (IAnomalyComponent component : safeComponents) {
+                if (component instanceof StateMachineComponent) {
+                    component.serverTick(this);
+                }
             }
         }
     }
@@ -129,13 +134,11 @@ public class AnomalyEntity extends Entity {
         if (!type.isEmpty()) {
             ZoneFactory.applyComponents(this, type, getCurrentState());
         }
-        // Обновляем снапшот-массив после наполнения списка компонентов
         this.activeComponents = this.components.toArray(new IAnomalyComponent[0]);
     }
 
     @Override
     protected void readAdditionalSaveData(CompoundTag tag) {
-        // Сначала зачитываем все данные в поля сущности без лишних пересборок
         if (tag.contains("AnomalyType")) {
             this.entityData.set(ANOMALY_TYPE, tag.getString("AnomalyType"));
         }
@@ -149,7 +152,6 @@ public class AnomalyEntity extends Entity {
             this.customOverrides = tag.getCompound("CustomOverrides");
         }
 
-        // И только когда весь NBT полностью готов — делаем ОДИН итоговый rebuild
         rebuildComponents();
     }
 

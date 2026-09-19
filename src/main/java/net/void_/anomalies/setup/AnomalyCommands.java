@@ -26,7 +26,7 @@ public class AnomalyCommands {
                         .then(Commands.literal("create")
                                 .then(Commands.argument("type", StringArgumentType.string())
                                         .suggests((context, builder) -> {
-                                            AnomalyReloadListener.getKeys().forEach(builder::suggest);
+                                            AnomalyReloadListener.getKeys().forEach(key -> builder.suggest(key));
                                             return builder.buildFuture();
                                         })
                                         .executes(context -> {
@@ -95,7 +95,8 @@ public class AnomalyCommands {
                                                         );
                                                         if (!anomalies.isEmpty()) {
                                                             AnomalyEntity nearest = anomalies.get(0);
-                                                            AnomalyReloadListener.getStates(nearest.getAnomalyType()).forEach(builder::suggest);
+                                                            AnomalyReloadListener.getStates(nearest.getAnomalyType())
+                                                                    .forEach(state -> builder.suggest(state));
                                                         }
                                                     }
                                                     return builder.buildFuture();

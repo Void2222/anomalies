@@ -11,11 +11,17 @@ import java.util.*;
 public class AnomalyScriptModel implements IAnomalyStateBehavior {
 
     private final Map<String, String> binds = new HashMap<>();
+    private final Map<String, String> recipeBinds = new HashMap<>();
     private final Map<String, List<TransitionRule>> transitions = new HashMap<>();
+    private final Map<String, List<String>> stateRecipes = new HashMap<>();
     private String initialState = "idle";
 
     public void addBind(String state, String jsonPath) {
         binds.put(state, jsonPath);
+    }
+
+    public void addRecipeBind(String recipeName, String jsonPath) {
+        recipeBinds.put(recipeName, jsonPath);
     }
 
     public void setInitialState(String state) {
@@ -26,12 +32,28 @@ public class AnomalyScriptModel implements IAnomalyStateBehavior {
         transitions.computeIfAbsent(state, k -> new ArrayList<>()).add(rule);
     }
 
+    public void addRecipeToState(String state, String recipeName) {
+        stateRecipes.computeIfAbsent(state, k -> new ArrayList<>()).add(recipeName);
+    }
+
     public String getInitialState() {
         return initialState;
     }
 
     public Map<String, String> getBinds() {
         return binds;
+    }
+
+    public Map<String, String> getRecipeBinds() {
+        return recipeBinds;
+    }
+
+    public List<String> getRecipesForState(String state) {
+        return stateRecipes.getOrDefault(state, Collections.emptyList());
+    }
+
+    public Map<String, List<String>> getStateRecipes() {
+        return stateRecipes;
     }
 
     @Override

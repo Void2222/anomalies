@@ -19,17 +19,32 @@ public class AnomalyAstBuilder extends AnomalyDSLBaseVisitor<Object> {
             if (stmt.bindClause() != null) {
                 String state = stmt.bindClause().stateName.getText();
                 String rawPath = stmt.bindClause().jsonPath.getText();
-                // Удаляем кавычки из STRING_LITERAL
                 String path = rawPath.substring(1, rawPath.length() - 1);
                 model.addBind(state, path);
+            } else if (stmt.recipeBindClause() != null) {
+                String recipeName = stmt.recipeBindClause().recipeName.getText();
+                String rawPath = stmt.recipeBindClause().jsonPath.getText();
+                String path = rawPath.substring(1, rawPath.length() - 1);
+                model.addRecipeBind(recipeName, path);
             } else if (stmt.initialStateClause() != null) {
                 model.setInitialState(stmt.initialStateClause().stateName.getText());
             } else if (stmt.stateBlock() != null) {
                 String stateName = stmt.stateBlock().stateName.getText();
-                for (AnomalyDSLParser.TransitionRuleContext tr : stmt.stateBlock().transitionRule()) {
-                    ICondition cond = (ICondition) visit(tr.expr);
-                    String target = tr.targetState.getText();
-                    model.addTransition(stateName, new TransitionRule(cond, target));
+
+                for (AnomalyDSLParser.StateElementContext elem : stmt.stateBlock().stateElement()) {
+                    if (elem.transitionRule() != null) {
+                        AnomalyDSLParser.TransitionRuleContext tr = elem.transitionRule();
+                        ICondition cond = (ICondition) visit(tr.expr);
+                        String target = tr.targetState.getText();
+                        model.addTransition(stateName, new TransitionRule(cond, target));
+                    }
+                    if (elem.recipeBlock() != null) {
+                        // Обходим список recipeRef внутри recipeBlock
+                        for (AnomalyDSLParser.RecipeRefContext ref : elem.recipeBlock().recipeRef()) {
+                            String recipeName = ref.recipeName.getText();
+                            model.addRecipeToState(stateName, recipeName);
+                        }
+                    }
                 }
             }
         }
@@ -79,7 +94,6 @@ public class AnomalyAstBuilder extends AnomalyDSLBaseVisitor<Object> {
         String event = ctx.eventName.getText().toLowerCase();
         String rawZone = ctx.zone.getText();
 
-        // Снимаем кавычки, если передана строка, или берем целое число как есть
         String zoneName = (rawZone.startsWith("\"") && rawZone.endsWith("\""))
                 ? rawZone.substring(1, rawZone.length() - 1)
                 : rawZone;

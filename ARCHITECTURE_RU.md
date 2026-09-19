@@ -57,7 +57,6 @@ net.void_.anomalies
 
 * **Класс:** `AnomalyEntity` (расширяет `net.minecraft.world.entity.Entity`)
 * **Назначение:** Базовая сущность аномалии в мире. Выступает точкой привязки в пространстве, контейнером для компонентов `IAnomalyComponent` и хранителем стейт-машины и оверрайдов.
-
 * **Технические детали:**
 * **Свойства в конструкторе:** `noPhysics = true`.
 * **Флаги переопределения:** `isPickable() = true`, `isInvulnerable() = true`, `canBeCollidedWith() = false`.
@@ -66,30 +65,22 @@ net.void_.anomalies
 * `ANOMALY_TYPE` (`String`) — базовый тип аномалии.
 * `CURRENT_STATE` (`String`) — активная фаза (по умолчанию `"idle"`, всегда приводится к нижнему регистру `toLowerCase()`).
 * `onSyncedDataUpdated()` отслеживает изменения `ANOMALY_TYPE` и `CURRENT_STATE` **строго на клиенте** (`isClientSide`), вызывая `rebuildComponents()`, чтобы моментально пересоздать визуал и звук. На сервере двойной вызов исключен.
-* **Размеры сущности:** По умолчанию `1.0F x 1.0F`. Метод `setAnomalyDimensions(width, height)` вызывает `refreshDimensions()`. Динамический хитбокс возвращается через `getDimensions(Pose pose) -> EntityDimensions.scalable(width, height)`.
-* **Атомарная загрузка NBT:** При считывании мира (`readAdditionalSaveData`) сначала зачитываются все параметры (`AnomalyType`, `CurrentState`, `CustomOverrides`), и лишь в самом конце вызывается единственный `rebuildComponents()`.
+* **Размеры сущности:** По умолчанию `1.0F x 1.0F`. Метод `setAnomalyDimensions(width, height)` обновляет локальные поля `anomalyWidth`/`anomalyHeight` и вызывает `refreshDimensions()`. Динамический хитбокс возвращается через `getDimensions(Pose pose) -> EntityDimensions.scalable(width, height)`.
+* **Атомарная загрузка NBT:** При считывании мира (`readAdditionalSaveData`) последовательно считываются `AnomalyType`, `CurrentState` (с приведением к `toLowerCase()`, фоллбэк: `"idle"`) и `CustomOverrides`, после чего вызывается единственный `rebuildComponents()`.
+* **Двухфазное исполнение серверного тика (`tick()`):**
+* На клиенте (`level().isClientSide`): итеративно вызывает `component.clientTick(this)` для всех компонентов из `activeComponents`.
+* На сервере:
+
+1. **Первый проход:** Исполняются все базовые компоненты, за исключением `StateMachineComponent` (включая `RecipeProcessorComponent`).
+2. **Второй проход:** Строго последней исполняется `StateMachineComponent`. Это гарантирует, что крафты и переработка предметов успевают завершиться на граничном тике прямо перед возможной сменой фазы аномалии.
 
 * **Управление NBT-оверрайдами и компонентами:**
 * `getCustomOverrides()` / `setCustomOverrides(CompoundTag tag)` — возвращает или подменяет тег оверрайдов (защитная копия) с вызовом `rebuildComponents()`.
 * `setOverrideDouble(key, value)` — запись `double`-параметра в NBT с авто-вызовом `rebuildComponents()`.
-* `getComponent(Class<T> type)` — дженерик-метод для поиска и извлечения активного экземпляра компонента по его классу ($O(N)$ проход по списку).
-
-* **Очистка памяти и жизненный цикл:** Переопределенный метод `onRemove(Entity.RemovalReason)` выравнивает жизненный цикл энтити с кэшем, вызывая `TransientZoneCache.clear(this)` при деспавне или уничтожении сущности, предотвращая утечки памяти в `CACHE`.
-
-**Структура NBT в сохранении мира:**
-* `"AnomalyType"` (`String`) — идентификатор шаблона аномалии.
-* `"CurrentState"` (`String`) — текущая фаза жизненного цикла.
-* `"CustomOverrides"` (`CompoundTag`) — NBT-тег локальных переопределений параметров.
-
-* **Исполнение тика (`tick()`):**
-* На клиенте (`level().isClientSide`): итеративно вызывает `component.clientTick(this)`.
-* На сервере: итеративно вызывает `component.serverTick(this)`.
-
+* `getComponent(Class<T> type)` — дженерик-метод для поиска и извлечения активного экземпляра компонента по его классу ($O(N)$ проход по списку `components`).
 * **Пересборка (`rebuildComponents()`):** Очищает `components.clear()`, пересобирает компоненты через `ZoneFactory.applyComponents(this, type, getCurrentState())` и обновляет снапшот `activeComponents`.
-
 * **Спавн-пакет:** `getAddEntityPacket()` возвращает `NetworkHooks.getEntitySpawningPacket(this)`.
-
-* **Связи:** `ZoneFactory`, `IAnomalyComponent`, `CompoundTag`, `NetworkHooks`, `SynchedEntityData`, `TransientZoneCache`.
+* **Связи:** `ZoneFactory`, `IAnomalyComponent`, `CompoundTag`, `NetworkHooks`, `SynchedEntityData`, `StateMachineComponent`, `RecipeProcessorComponent`.
 
 ---
 
@@ -128,23 +119,29 @@ net.void_.anomalies
 * **Класс:** `ZoneFactory`
 * **Назначение:** Composition Root. Фабричный класс, отвечающий за сборку, инстанцирование и dynamic-rebuild всех физических, визуальных и логических компонентов аномалии при объединении данных JSON-конфигураций (`AnomalyDefinition`) и NBT-оверрайдов (`customOverrides`).
 * **Технические детали:**
-* **Создание сущности (`create`):** Проверяет наличие `type` в `AnomalyReloadListener`, создаёт `AnomalyEntity` через `EntityInit.ANOMALY.get().create(level)`, выставляет координаты и регистронезависимый тип.
+* **Создание сущности (`create`):** Проверяет существование типа через `AnomalyReloadListener.exists(type)`. При успехе создаёт `AnomalyEntity` через `EntityInit.ANOMALY.get().create(level)`, выставляет координаты и принудительно переводит тип в нижний регистр (`type.toLowerCase()`).
 * **Метод `applyComponents(AnomalyEntity anomaly, String type, String state)`:**
-1. Всегда добавляет `SnapToGridComponent`.
-2. На серверной стороне **всегда** навешивает `StateMachineComponent` (оркестратор фазовых переходов).
-3. Запрашивает `AnomalyDefinition` для текущей фазы (`state`) из `AnomalyReloadListener.get(type, state)`.
-4. Получает NBT-оверрайды `anomaly.getCustomOverrides()` (имеют приоритет над свойствами JSON).
-5. `setupDimensions()`: считывает габариты через `OverrideHelper.getDimensions()` и обновляет размеры хитбокса.
-6. `setupParticles()`: парсит и навешивает `ParticleComponent` для каждой конфигурации частицы (с поддержкой LOD и мгновенного спавна).
-7. `setupSound()`: конструирует `SoundComponent` под выбранный источник звука (`SoundSource`) и регистрирует звуковой ивент.
-8. `setupTriggerAndPhysics()`: настраивает компоненты урона, физики и области обнаружения.
+
+1. Запрашивает `AnomalyDefinition` для фазы (`state`) из `AnomalyReloadListener.get(type, state)`. При отсутствии конфигурации прерывает выполнение.
+2. Всегда навешивает `SnapToGridComponent`.
+3. На серверной стороне (`!isClientSide`):
+
+* Всегда добавляет `StateMachineComponent(type)` (оркестратор фазовых переходов).
+* **Условное подключение рецептов:** Проверяет наличие DSL-скрипта через `AnomalyScriptRegistry.get(type)`. Если скрипт найден и содержит рецепты для текущей фазы (`!script.get().getRecipesForState(state).isEmpty()`), навешивает `RecipeProcessorComponent`.
+
+4. Извлекает NBT-оверрайды `anomaly.getCustomOverrides()`.
+5. `setupDimensions()`: считывает габариты через `OverrideHelper.getDimensions()` и обновляет размеры хитбокса аномалии.
+6. `setupParticles()`: регистрирует частицы через `BuiltInRegistries.PARTICLE_TYPE` с автофоллбэком на `ParticleTypes.FLAME`, парсит `Shape` enum и интервалы/количество с учетом оверрайдов.
+7. `setupSound()`: разрешает звуковой ивент через `BuiltInRegistries.SOUND_EVENT` (с фоллбэком на `SoundEvent.createVariableRangeEvent`), парсит `SoundSource` enum и задает громкость/pitch.
+8. `setupTriggerAndPhysics()`: настраивает компоненты урона, физики и сканера целей.
 
 * **Динамическая настройка физики и триггера (`setupTriggerAndPhysics`):**
-* **Авторасчет радиуса сканирования:** Вычисляет `expandRadius` как максимальный радиус среди всех зон (`ZoneConfig::radius`) с фоллбеком на NBT-оверрайд `expandRadius`.
-* **Отзывчивый сканер:** Автоматически создает `TriggerComponent` с интервалом проверки `(1, 1)` тиков для мгновенной реакции на вход/выход сущностей.
-* **Физика (`ImpulseComponent`):** Создается и навешивается только если список зон не пуст (`!zones.isEmpty()`).
-
+* **Авторасчет радиуса сканирования:** Вычисляет `expandRadius` как максимальный радиус среди всех зон (`ZoneConfig::radius`) с фоллбеком на NBT-оверрайд `expandRadius` (дефолт: `1.0`).
+* **Отзывчивый сканер:** Создает `TriggerComponent` с фиксированным интервалом проверки `(1, 1)` тиков для мгновенной реакции на вход/выход сущностей.
+* **Базовый урон:** Навешивает `DamageComponent` с дефолтным диапазоном `(0, 0)` и источником `level().damageSources().generic()`.
+* **Физика (`ImpulseComponent`):** Создается только при наличии зон (`!zones.isEmpty()`) с учетом параметров `pullToCenter` и импульсов по X/Y/Z из `PhysicsConfig`.
 * **Логика обработки целей (`handleTriggerTarget`):**
+
 1. Проверяет флаг `ignoreOtherAnomalies == true` для сущностей класса `AnomalyEntity`.
 2. Проверяет регистрацию игрока в `AnomalyIgnoreManager.isIgnored(player)`.
 3. При наличии `impulseComp` исполняет `impulseComp.applyImpulse(anomaly, target)`.
@@ -152,11 +149,12 @@ net.void_.anomalies
 5. Для предметов (`ItemEntity`) публикует `AnomalyItemInteractEvent`.
 6. Для остальных сущностей публикует `AnomalyTriggerEvent` (с прерыванием при отмене).
 7. При наличии параметров урона (`activeZone.damage() != null`):
-* Применяет эффект поджога `target.setSecondsOnFire(fireSeconds)`.
-* Вычисляет источник урона `getDamageSource()` (`fire`, `lightning`, `magic`, `generic`).
-* Наносит урон через `damageComp.inflictDamage()`.
 
-* **Связи:** `AnomalyEntity`, `AnomalyReloadListener`, `OverrideHelper`, `ZoneUtils`, `ImpulseComponent`, `DamageComponent`, `TriggerComponent`, `ParticleComponent`, `SoundComponent`, `StateMachineComponent`, `EntityInit`, `AnomalyIgnoreManager`.
+* Применяет эффект поджога `target.setSecondsOnFire(fireSeconds)`.
+* При `damage > 0` выбирает источник через `getDamageSource()` (`fire` -> `inFire()`, `lightning` -> `lightningBolt()`, `magic` -> `magic()`, дефолт -> `generic()`).
+* Наносит урон через `damageComp.inflictDamage()`.
+* **Перегрузка `applyComponents(anomaly, type)`:** По умолчанию собирает аномалию для состояния `"idle"`.
+* **Связи:** `AnomalyEntity`, `AnomalyReloadListener`, `OverrideHelper`, `ZoneUtils`, `ImpulseComponent`, `DamageComponent`, `TriggerComponent`, `ParticleComponent`, `SoundComponent`, `StateMachineComponent`, `RecipeProcessorComponent`, `AnomalyScriptRegistry`, `EntityInit`, `AnomalyIgnoreManager`.
 
 ---
 
@@ -179,7 +177,140 @@ net.void_.anomalies
 
 * **Связи:** `DamageConfig`, `PhysicsConfig`, `AnomalyEntity`, `Entity`.
 
+#### `CraftingSession`
+
+* **Класс:** `CraftingSession`
+* **Назначение:** Mutable DTO текущего состояния одной сессии крафта/трансмутации предметов внутри аномалии.
+* **Поля:**
+* `String recipeId` — строковый идентификатор исполняемого рецепта.
+* `int progress` — текущий наработанный прогресс в тиках.
+* `Map<UUID, Integer> reservedItems` — мапа забронированных ингредиентов (`UUID` сущности `ItemEntity` -> забронированное количество штук из стака).
+
+* **Технические детали:**
+* `incrementProgress()` — атомарный инкремент тиков переработки.
+* `serializeNBT()` / `deserializeNBT(CompoundTag)` — полная сериализация/десериализация сессии в NBT (`RecipeId`, `Progress`, `ReservedItems` со списком параметр-тегов `UUID` и `Count`).
+
+* **Связи:** `RecipeProcessorComponent`, `CompoundTag`, `ListTag`.
+
+#### `AnomalyRecipeDefinition`
+
+* **Класс:** `AnomalyRecipeDefinition`
+* **Назначение:** DTO-модель JSON-конфигурации рецепта аномалии.
+* **Поля:**
+* `IngredientData input` — одиночный входной ингредиент (поддержка устаревшего формата JSON).
+* `List<IngredientData> inputs` — список входных ингредиентов рецепта.
+* `ResultData output` — целевой выходящий предмет.
+* `int time` — длительность процесса крафта в тиках.
+
+* **Вложенные DTO:**
+* `IngredientData` (`String item`, `int count = 1`) — входной ResourceLocation предмета и требуемое количество.
+* `ResultData` (`String item`, `int count = 1`) — результирующий ResourceLocation предмета и выходящий количество.
+
+* **Технические детали:**
+* `getInputs()` — метод-адаптер, обеспечивающий обратную совместимость: если заполнен массив `inputs`, возвращает его, иначе возвращает единичный `input` в виде `List.of(input)`.
+
+* **Связи:** `RecipeProcessorComponent`, `AnomalyReloadListener`.
+
 ---
+#### `MinMaxRange` и `MinMaxRange.Deserializer`
+
+* **Класс:** `MinMaxRange`
+* **Назначение:** Обертка для работы с диапазонами случайных величин (интервалы тиков, урон, радиусы, количество частиц). Устраняет жесткую привязку к статичным значениям в JSON.
+* **Поля:**
+* `double min` — минимальная граница (автоматически нормализуется через `Math.min`).
+* `double max` — максимальная граница (автоматически нормализуется через `Math.max`).
+
+* **Ключевые методы:**
+* `getInt()` — генерирует случайное целое число в диапазоне $[min, max]$ включительно. Если $min == max$, возвращает значение без вызова ГСЧ.
+* `getDouble()` — генерирует случайное вещественное число в диапазоне $[min, max)$.
+* `isZero()` — предикат проверки равенства максимальной границы нулю или ниже ($max \le 0.0$).
+
+* **Кастомная десериализация (`MinMaxRange.Deserializer`):**
+* Реализует `JsonDeserializer<MinMaxRange>` для гибкой поддержки двух синтаксисов в JSON:
+* **Числовой примитив:** `"interval": 40` $\rightarrow$ конструирует `MinMaxRange(40, 40)`.
+* **Массив из 2 элементов:** `"interval": [30, 60]` $\rightarrow$ конструирует `MinMaxRange(30, 60)`.
+
+---
+
+#### `DamageConfig`
+
+* **Тип:** Record `DamageConfig(MinMaxRange outerAmount, MinMaxRange innerAmount, int fireSeconds, String damageType)`
+* **Назначение:** DTO параметров нанесения урона сущностям во внешних и внутренних слоях аномалии.
+* **Поля:**
+* `MinMaxRange outerAmount` — случайный диапазон урона во внешней зоне.
+* `MinMaxRange innerAmount` — случайный диапазон урона в эпицентре (внутренней зоне).
+* `int fireSeconds` — длительность поджигания цели в секундах.
+* `String damageType` — строковый идентификатор типа урона (ResourceLocation).
+
+* **Обратная совместимость:** Вторичный конструктор `DamageConfig(MinMaxRange amount, int fireSeconds, String damageType)` перенаправляет устаревшие JSON-конфиги с единым полем `amount` в `innerAmount`, устанавливая `outerAmount` в нуль `MinMaxRange(0, 0)`.
+
+---
+
+#### `PhysicsConfig`
+
+* **Тип:** Record `PhysicsConfig(double impulseX, double impulseY, double impulseZ, boolean pullToCenter, double pullForce, double spinForce)`
+* **Назначение:** DTO конфигурации физических векторов, импульсов и гравитационных аффектов аномалии.
+* **Поля:**
+* `impulseX`, `impulseY`, `impulseZ` — базовые направленные векторные толкающие импульсы.
+* `boolean pullToCenter` — флаг активации векторного притягивания сущностей к центру аномалии.
+* `double pullForce` — сила притяжения к эпицентру.
+* `double spinForce` — тангенциальная сила для тангенциального (вихревого/орбитального) вращения сущностей вокруг центра.
+
+---
+
+#### `ParticleConfig`
+
+* **Тип:** Record `ParticleConfig(String type, String shape, MinMaxRange interval, double radius, double height, MinMaxRange count)`
+* **Назначение:** DTO настроек визуальных эффектов частиц.
+* **Поля:**
+* `String type` — ResourceLocation частицы.
+* `String shape` — геометрия спавна (`SPHERE`, `CYLINDER`, `RING` и т.д.).
+* `MinMaxRange interval` — диапазон паузы в тиках между эмиссиями.
+* `double radius` / `double height` — пространственные габариты зоны спавна.
+* `MinMaxRange count` — диапазон количества частиц за одну эмиссию.
+
+* **Фабричный метод `toComponent()`:**
+* Парсит `type` через `BuiltInRegistries.PARTICLE_TYPE`. При отсутствии совпадений ставит фоллбэк `ParticleTypes.FLAME`.
+* Транслирует строку `shape` в `ParticleComponent.Shape` (фоллбэк: `SPHERE`).
+* Возвращает готовый к работе `ParticleComponent`.
+
+---
+
+#### `SoundConfig`
+
+* **Тип:** Record `SoundConfig(String event, MinMaxRange interval, String source, float volume, float pitch)`
+* **Назначение:** DTO конфигурации фоновых звуков и звуковых эффектов фазы.
+* **Поля:**
+* `String event` — ResourceLocation звукового события.
+* `MinMaxRange interval` — диапазон интервалов проигрывания звука в тиках.
+* `String source` — имя категории источника звука (например, `"BLOCKS"`, `"AMBIENT"`).
+* `float volume` / `float pitch` — громкость и высота тона.
+
+* **Фабричный метод `toComponent()`:**
+* Резолвит `event` в `BuiltInRegistries.SOUND_EVENT`. **Трюк для кастома:** если звук не найден в ванильном реестре, динамически создает `SoundEvent.createVariableRangeEvent(loc)`, предотвращая NPE при вызове кастомных модовых звуковых эвентов.
+* Безопасно парсит `SoundSource` через `valueOf` (фоллбэк: `SoundSource.BLOCKS`).
+* Возвращает экземпляр `SoundComponent`.
+
+---
+
+#### `TriggerConfig`
+
+* **Тип:** Record `TriggerConfig(double expandRadius, MinMaxRange interval)`
+* **Назначение:** DTO настроек триггера активности аномалии.
+* **Поля:**
+* `double expandRadius` — дополнительное расширение радиуса детектирования сущностей.
+* `MinMaxRange interval` — интервал проверки триггера со случайным разбросом в тиках.
+
+---
+
+#### `SizeConfig`
+
+* **Тип:** Record `SizeConfig(float width, float height)`
+* **Назначение:** DTO пространственных габаритов сущности аномалии для динамической пересборки BoundingBox (`AABB`).
+* **Поля:** `width` (ширина/диаметр), `height` (высота).
+
+---
+
 ### 2.3. Вспомогательные Утилиты и Загрузчик JSON (`anomaly.util` / `anomaly.loader`)
 
 *Пакеты:* `net.void_.anomalies.anomaly.util`, `net.void_.anomalies.anomaly.loader`
@@ -214,24 +345,40 @@ net.void_.anomalies
 
 * **Связи:** `ZoneConfig`, `AnomalyEntity`, `Entity`.
 
+---
+
 #### `AnomalyReloadListener` (`anomaly.loader`)
 
-* **Назначение:** Datapack-загрузчик шаблонов аномалий и их состояний из JSON-файлов по пути `data/<mod_id>/anomalies/`.
+* **Класс:** `AnomalyReloadListener` (расширяет `SimpleJsonResourceReloadListener`)
+* **Назначение:** Datapack-загрузчик шаблонов аномалий, их фазовых состояний и рецептов крафта из JSON-файлов по пути `data/<mod_id>/anomalies/`.
 * **Технические детали:**
-* Наследует `SimpleJsonResourceReloadListener`.
-* **Статический реестр:** Вложенная карта `Map<String, AnomalyDefinition Map<String,>> REGISTRY` (Тип -> Состояние -> Конфиг).
-* **Загрузка датапаков (`apply`):**
+* **Статические реестры:**
+* `REGISTRY`: Двухуровневая карта `Map<String, AnomalyDefinition Map<String,>>` (Тип аномалии -> Имя фазы -> Конфигурация).
+* `RECIPE_REGISTRY`: Двухуровневая карта `Map<String, AnomalyRecipeDefinition Map<String,>>` (Тип аномалии -> Имя рецепта -> Конфигурация рецепта).
 
-1. Парсит структуру папок. Файлы вида `anomalies/zharka/states/idle.json` ложатся по ключам `zharka` -> `idle`.
-2. **Фоллбэк для легаси:** Если найден файл `anomalies/zharka.json` (без подпапки), из имени файла принудительно отрезается расширение `.json` (для чистого ключа `zharka`), и он автоматически регистрируется как состояние `idle`. Старые датапаки не ломаются.
+* **Конфигурация GSON:** Инициализируется с поддержкой `.setLenient()` и зарегистрированным десериализатором `MinMaxRange.Deserializer`.
+* **Двухмаршрутный динамический парсинг (`apply`):**
+1. **Маршрут рецептов:** Производит динамический поиск сегмента `"recipes"` в пути ресурса (`.../<type>/recipes/<recipe_name>.json`). Извлекает идентификатор типа из сегмента перед `"recipes"`, десериализует `AnomalyRecipeDefinition` и заносит в `RECIPE_REGISTRY`.
+2. **Маршрут состояний (фаз):**
+* **Структура с папкой состояний (`<type>/states/<state>.json`):** Извлекает `type` из `parts[0]` и `state` из `parts[2]`.
+* **Упрощенная папка (`<type>/<state>.json`):** Извлекает `type` из `parts[0]` и `state` из `parts[1]`.
+* **Одиночный файл (Легаси / `<type>.json`):** Извлекает `type` из имени файла и автоматически привязывает дефолтное имя фазы `"idle"`.
+* Десериализует `AnomalyDefinition` и регистрирует в `REGISTRY`.
+
+* **Иерархическая логика получения состояний (`get(type, state)`):**
+1. Приводит ключи к нижнему регистру (`toLowerCase()`) и ищет точное совпадение по запрошенной фазе `state`.
+2. При отсутствии запрошенного состояния выполняет автоматический фоллбэк на базовую фазу `"idle"`.
+3. Если фаза `"idle"` также отсутствует в реестре, возвращает первое попавшееся зарегистрированное состояние для данного типа или `null`.
 
 * **Публичный интерфейс:**
-* `get(String type, String state)` — считывает `AnomalyDefinition` для конкретной фазы.
-* `getStates(String type)` — возвращает набор загруженных состояний для аномалии.
-* `getKeys()` — возвращает `Set<String>` всех зарегистрированных типов (для автокомплита).
-* **Связи:** `SimpleJsonResourceReloadListener`, `AnomalyDefinition`, `MinMaxRange`, `Gson`, `ResourceLocation`.
-
----
+* `get(String type, String state)` — считывает `AnomalyDefinition` с трехуровневым фоллбэком.
+* `getRecipe(String type, String recipeName)` — извлекает конфигурацию рецепта `AnomalyRecipeDefinition` из `RECIPE_REGISTRY`.
+* `hasRecipe(String type, String recipeName)` — проверяет наличие зарегистрированного рецепта.
+* `exists(String type)` — проверяет существование зарегистрированного типа аномалии в `REGISTRY`.
+* `hasState(String type, String state)` — точечная проверка существования конкретной фазы.
+* `getStates(String type)` — возвращает `Set<String>` всех доступных фаз для типа.
+* `getKeys()` — возвращает `Set<String>` всех зарегистрированных типов аномалий (для автокомплита в командах).
+* **Связи:** `SimpleJsonResourceReloadListener`, `AnomalyDefinition`, `AnomalyRecipeDefinition`, `MinMaxRange`, `Gson`, `ResourceLocation`.
 
 ## 3. Расширяемый API Событий (`api.event`)
 
@@ -425,6 +572,33 @@ net.void_.anomalies
 
 ---
 
+#### `4.8. RecipeProcessorComponent`
+
+* **Класс:** `RecipeProcessorComponent` (имплементирует `IAnomalyComponent`)
+* **Назначение:** Серверный компонент логики рецептов трансмутации и крафта предметов. Выполняет сканирование сущностей предметов (`ItemEntity`) в эпицентре аномалии, ведет параллельные сессии переработки с виртуальным бронированием ингредиентов и сохраняет прогресс в NBT.
+* **Алгоритм и Логика Выполнения (`serverTick`):**
+1. **Фильтрация разрешенных рецептов:** Запрашивает у `AnomalyScriptRegistry` список допустимых рецептов (`getRecipesForState`) для текущей фазы аномалии (`currentState`). Если список пуст — обработка завершается.
+2. **Определение зоны сканирования:** Извлекает конфигурацию зоны `zone0` с минимальным радиусом из `AnomalyDefinition`. Если зона задана, формирует `AABB` со сдвигом на ее радиус и проверяет предикат `zone0.contains(anomaly, item)`; иначе использует базовый радиус $2.5$ блока (`closerThan`).
+3. **Валидация и очистка активных сессий:**
+* Считывает текущие сессии из NBT (`CraftingSessions`).
+* Проверяет существование забронированных `ItemEntity` на сервере и наличие нужного количества предметов в их стаках.
+* Если предмета нет или его стак уменьшился ниже забронированного объёма — сессия признается невалидной, сбрасывается и спавнит визуальные частицы `ParticleTypes.SMOKE`.
+
+4. **Матчинг и регистрация новых рецептов:**
+* Рассчитывает доступный виртуальный остаток предметов: $\text{AvailableVirtual} = \text{RealCount} - \text{ReservedCount}$.
+* Сопоставляет предметы в зоне со списком `inputs` из `AnomalyRecipeDefinition`.
+* Поддерживает параллельное создание нескольких одинаковых или разных рецептов за один тик в рамках доступного количества ресурсов. Наденные совпадения оборачиваются в новую `CraftingSession` с `progress = 0` и добавляются в NBT-список.
+
+5. **Инкремент прогресса и Выдача результата:**
+* Инкрементирует `progress` всех валидных сессий.
+* При достижении `progress >= recipeDef.getTime()` извлекает требуемое количество предметов из `ItemEntity` (`stack.shrink(...)`), удаляя пустые стаки через `item.discard()`.
+* Создает и спавнит новый `ItemEntity` с результатом `output` в координатах аномалии (`Y + 0.5`), после чего завершает сессию.
+
+* **Хранение состояния:** Сериализует сессии в `CompoundTag` сущности аномалии по ключу `CraftingSessions`.
+* **Связи:** `IAnomalyComponent`, `CraftingSession`, `AnomalyRecipeDefinition`, `AnomalyScriptRegistry`, `AnomalyReloadListener`, `ItemEntity`, `BuiltInRegistries.ITEM`.
+
+---
+
 ## 5. Система Управления и Мультитул (`item`)
 
 *Пакет:* `net.void_.anomalies.item`
@@ -472,31 +646,42 @@ net.void_.anomalies
 
 * **Связи:** `AnomalyEntity`, `AnomalyDefinition`, `AnomalyReloadListener`, `CompoundTag`, `Component`.
 
-#### `ModifyProcessor`
-
-* **Назначение:** Интерактивный редактор NBT-оверрайдов аномалий прямо через игровой чат с немедленным пересчетом параметров в реальном времени.
+* **Класс:** `ModifyProcessor`
+* **Назначение:** Чат-процессор и контроллер интерактивного редактирования NBT-оверрайдов аномалий в реальном времени с помощью предмета-мультитула («Изменятор»).
 * **Технические детали:**
-* **Инициализация сессии (`onInteract`):**
-* **Shift + ПКМ:** Мгновенно сбрасывает все NBT-оверрайды аномалии (`setCustomOverrides(new CompoundTag())`), перезапускает сборку компонентов (`rebuildComponents()`) и очищает NBT-теги сессии в предмете.
-* **Обычный ПКМ:** Регистрирует `UUID` выбранной аномалии в NBT предмета (`SelectedAnomaly`), устанавливает флаг `WaitingForParams = true`, закрывает предыдущую сессию (если сменилась аномалия) и выводит текущую карточку параметров (`printCurrentState`).
+* **Сессия взаимодействия (`onInteract`):**
+* **Shift + ПКМ:** Мгновенно очищает NBT-тег оверрайдов сущности (`anomaly.setCustomOverrides(new CompoundTag())`), вызывает `anomaly.rebuildComponents()` и сбрасывает сессию редактирования в NBT предмета (`clearSession`).
+* **Обычный ПКМ:** Запоминает `UUID` аномалии в NBT предмета (`SelectedAnomaly`), устанавливает флаг `WaitingForParams = true`, логирует закрытие предыдущей сессии при смене целевой аномалии и выводит сводную карточку параметров текущей фазы (`printCurrentState`).
 
-* **Обработка чат-команд (`onChat`):**
-* Перехватывает сообщения, пока активен флаг `WaitingForParams`. Поддерживает пакетное выполнение нескольких команд через разделитель `;`.
-* **Завершение:** `done`, `exit` или `save` — вызываeт `clearSession()` и закрывает режим редактирования.
-* **Диагностика:** `show` / `list` — повторный вывод состояния; `help` / `?` — вызов справочника по командам.
-* **Сброс оверрайдов (`reset`):** `reset all` (полный сброс до JSON), `reset zone <idx>` (удаление оверрайдов конкретной зоны), `reset <param>` (удаление точечного оверрайда).
-* **Переключение флагов (`toggle`):** `toggle pull` — инвертирует физический флаг `pullToCenter`.
-* **Конфигурирование зон (`zone`):**
-* `zone add <r> <d> <pf> <sf>` — динамическое добавление зоны с валидацией радиуса и сил.
-* `zone remove <idx>` — удаление зоны со сдвигом индексов оставшихся слоев.
-* `zone <idx> <param> <val>` — точечная корректировка параметров конкретной зоны (`radius`, `damage`, `pullForce`, `spinForce`, `impulseY`).
+* **Перехват и обработка чат-команд (`onChat`):**
+* Перехватывает сообщения игрока в чате, пока в предмете активен флаг `WaitingForParams`. При отсутствии сущности в `ServerLevel` оповещает пользователя и закрывает сессию.
+* **Пакетное исполнение:** Поддерживает выполнение цепочки команд в одном сообщении через разделитель `;` (`trimmed.split(";")`).
+* **Завершение сессии:** Команды `done`, `exit`, `save` сбрасывают теги предмета через `clearSession()` и выходят из режима редактирования.
+* **Диагностика и справка:** `show` / `list` повторно выводят текущие параметры; `help` / `?` открывают справочник доступных команд и алиасов.
+* **Ленивая инициализация зон (`ensureZonesInitialized`):** Если в NBT оверрайдов отсутствует `zones_count`, автоматически предзаполняет оверрайды зон на основе JSON-конфигурации текущего состояния (`AnomalyReloadListener.get(type, anomaly.getCurrentState())`).
 
-* **Система алиасов и валидация (`resolveAlias`, `validateAndApply`):**
-* Распознает сокращения: `w` (`width`), `h` (`height`), `r` (`expandRadius`), `pull` (`pullToCenter`), `fire` (`fireSeconds`), `vol`/`volume` (`soundVolume`), `pitch` (`soundPitch`), `prad` (`particleRadius`), `pheight` (`particleHeight`).
-* Жестко валидирует диапазоны значений перед записью (например, радиусы и размеры `[0.05 ... 64.0]`, громкость/pitch `[0.0 ... 10.0]`, интервал триггера `[0.05 ... 60.0]` сек).
+* **Синтаксис и разделы команд:**
+* **Сброс параметров (`reset`):**
+* `reset all` — полный сброс NBT-оверрайдов сущности с возвратом к баночным JSON-значениям.
+* `reset zone <idx>` — сброс оверрайдов конкретной зоны по её индексу.
+* `reset <param>` — точечное удаление переопределения с удалением ключа из NBT.
 
-* **Применение изменений:** При каждом успешном изменении обновляет NBT-тег аномалии и вызывает `anomaly.rebuildComponents()` для моментальной синхронизации состояния.
+* **Переключение флагов (`toggle`):** `toggle pull` (или `pullToCenter`) — инвертирует boolean-значение с учетом фоллбэка на физический конфиг из JSON.
+* **Управление зонами (`zone`):**
+* `zone add <r> <d> <pf> <sf>` — добавление новой зоны (радиус, урон, тяга, вращение) с дефолтным `impulseY = 0.1` и инкрементом `zones_count`.
+* `zone remove <idx>` — удаление зоны по индексу со сдвигом слоев и декрементом `zones_count`.
+* `zone <idx> <param> <val>` — точечная модификация параметров зоны (`radius`, `damage`, `pullForce`, `spinForce`, `impulseY`).
 
+* **Система алиасов и строгая валидация (`resolveAlias`, `validateAndApply`):**
+* **Алиасы параметров:** `w` (`width`), `h` (`height`), `r` (`expandRadius`), `pull` (`pullToCenter`), `fire` (`fireSeconds`), `vol`/`volume` (`soundVolume`), `pitch` (`soundPitch`), `prad` (`particleRadius`), `pheight` (`particleHeight`).
+* **Валидация диапазонов:**
+* Размеры и радиусы (`width`, `height`, `expandRadius`, `particleRadius`, `particleHeight`, `zone radius`): `[0.05 ... 64.0]`.
+* Звук (`soundVolume`, `soundPitch`): `[0.0 ... 10.0]`.
+* Интервал триггера (`triggerInterval`): `[0.05 ... 60.0]` сек.
+* Время горения (`fireSeconds`): `[0 ... 3600]` сек.
+* Силы зоны (`pullForce`, `spinForce`): `[-10.0 ... 10.0]`.
+
+* **Синхронизация и отображение:** При наличии примененных изменений обновляет `customOverrides` в аномалии и вызывает `anomaly.rebuildComponents()`. В выводе состояния (`printCurrentState`) переопределенные значения выделяются отдельным цветовым маркером `§e§l<val> §6[Override]`.
 * **Связи:** `AnomalyEntity`, `AnomalyDefinition`, `AnomalyReloadListener`, `CompoundTag`, `ItemStack`, `Player`, `ServerLevel`.
 
 #### `DeleteProcessor`
@@ -526,6 +711,29 @@ net.void_.anomalies
 
 ### 5.3. Предмет Мультитула и Перечисление Режимов (`item`)
 
+#### `AnomalyMultitoolItem` (`item.AnomalyMultitoolItem`)
+
+* **Класс:** `AnomalyMultitoolItem` (расширяет `net.minecraft.world.item.Item`)
+* **Назначение:** Админский/отладочный инструмент для интерактивного управления, анализа, модификации, перемещения и удаления сущностей аномалий прямо в игре.
+* **Хранение состояния в NBT:**
+* `getMode(ItemStack stack)` — извлекает имя текущего режима из NBT-тега `"Mode"`. При отсутствии тега или ошибке парсинга безопасно возвращает фоллбэк `MultitoolMode.ANALYZE`.
+* `setMode(ItemStack stack, MultitoolMode mode)` — записывает `mode.name()` в NBT-тег `"Mode"`.
+
+* **Механика переключения режимов (`use`):**
+* Обрабатывается строго в главной руке (`InteractionHand.MAIN_HAND`).
+* При зажатой клавише **Shift + ПКМ по воздуху**:
+1. **Сброс сессионных данных:** На стороне сервера принудительно очищает из NBT предмета временные теги активных диалогов/вводов: `"WaitingForOffset"`, `"WaitingForParams"` и `"SelectedAnomaly"`.
+2. **Циклическая ротация:** Получает текущий режим и переключает его на следующий via `getMode().next()`.
+3. **Обратная связь:** Выводит динамическое цветное сообщение о смене режима в Action Bar игрока (`displayClientMessage`).
+4. **Синхронизация:** Возвращает `InteractionResultHolder.sidedSuccess`, гарантируя отправку клиентом сетевого пакета использования предмета.
+
+* **Отображение подсказок (`appendHoverText`):**
+* Формирует динамический тултип с цветовым выделением текущего режима (`mode.getColor()`), его подробным описанием и подсказкой по горячим клавишам переключения (`Shift + ПКМ`).
+
+* **Связи:** `MultitoolMode`, `InteractionResultHolder`, `CompoundTag`, `Component`, `ChatFormatting`.
+
+---
+
 #### `MultitoolMode` (`item.MultitoolMode`)
 
 * **Перечисление:** `MultitoolMode`
@@ -536,12 +744,8 @@ net.void_.anomalies
 * `RELOCATE` ("Перемещение", `ChatFormatting.GREEN`): захват аномалии, сдвиг по координатам через чат или перенос кликом по блоку.
 * `DELETE` ("Удаление", `ChatFormatting.RED`): мгновенное уничтожение аномалии.
 
-
 * **Метод циклической ротации (`next()`):** `values()[(this.ordinal() + 1) % values().length]` — обеспечивает зацикленное переключение режимов по кругу.
 * **Связи:** `AnomalyMultitoolItem`, `ChatFormatting`.
-
----
-
 ## 6. Клиентская Часть (`client`)
 
 *Пакет:* `net.void_.anomalies.client`
@@ -574,18 +778,22 @@ net.void_.anomalies
 
 *Пакеты:* `net.void_.anomalies.setup`, `net.void_.anomalies`
 
-### 7.1. Командный Интерфейс Администрирования
+### 7.1. Командный Интерфейс Администрирования (`setup.AnomalyCommands`)
 
 * **Класс:** `AnomalyCommands`
 * **Назначение:** Регистрация и обработка консольных команд администрирования аномалий.
 * **Технические детали:**
-    * **Уровень доступа:** Требует `hasPermission(2)` (уровень оператора/администратора).
-    * **Структура команд:**
-        * `/anomaly create <type>` — Спавнит аномалию указанного типа по координатам игрока. Поддерживает динамический автокомплит типов из `AnomalyReloadListener.getKeys()`.
-        * `/anomaly ignore <player> <state>` — Устанавливает статус игнорирования игрока аномалиями (`true`/`false`). Сохраняет значение через `AnomalyIgnoreManager.setIgnored()`.
-        * `/anomaly state set <state>` — принудительно переключает фазу аномалии (через которую проходит луч зрения) для тестирования переходов и визуальных эффектов в реальном времени. Автокомплит фаз подтягивается динамически.
+* **Уровень доступа:** Требует `hasPermission(2)` (уровень оператора/администратора).
+* **Структура команд:**
+* `/anomaly create <type>` — Конструирует сущность через `ZoneFactory.create()` по координатам игрока (`x`, `y`, `z`) и спавнит её в мире через `level.addFreshEntity()`. Динамический автокомплит аргумента `type` запрашивает ключи из `AnomalyReloadListener.getKeys()`.
+* `/anomaly ignore <player> <state>` — Добавляет или удаляет игрока из глобального списка игнорирования триггерами аномалий. Управляет записью `UUID` игрока через `AnomalyIgnoreManager.setIgnored(target.getUUID(), state)`.
+* `/anomaly state set <state>` — Принудительно меняет фазу жизненного цикла для ближайшей аномалии в радиусе 10 блоков (`player.getBoundingBox().inflate(10.0)`).
+* **Динамический автокомплит:** Автоматически ищет ближайшую `AnomalyEntity` к игроку и предлагает список валидных фаз, зарегистрированных для этого типа через `AnomalyReloadListener.getStates()`.
+* **Валидация:** Перед сменой проверяет существование запрошенного состояния в JSON через `AnomalyReloadListener.hasState()`, после чего применяет фазу вызовом `anomaly.setCurrentState(newState)`.
 
-* **Связи:** `CommandDispatcher`, `CommandSourceStack`, `ZoneFactory`, `AnomalyReloadListener`, `AnomalyIgnoreManager`, `AnomalyEntity`.
+* **Связи:** `CommandDispatcher`, `CommandSourceStack`, `ZoneFactory`, `AnomalyReloadListener`, `AnomalyIgnoreManager`, `AnomalyEntity`, `ServerPlayer`, `ServerLevel`.
+
+---
 
 ### 7.2. Инициализация Сущностей (`setup.EntityInit`)
 
@@ -598,34 +806,79 @@ net.void_.anomalies
 * Базовый хитбокс: `sized(1.0F, 1.0F)`.
 * Дистанция отслеживания пакетов клиентом: `clientTrackingRange(64)` (64 блока).
 * Частота обновления сетевых пакетов: `updateInterval(20)` (раз в 20 тиков / 1 секунду).
-
 * **Метод `register(IEventBus eventBus)`:** Подключает реестр `ENTITIES` к шине событий мода.
-
 * **Связи:** `DeferredRegister`, `RegistryObject`, `EntityType`, `MobCategory`, `AnomalyEntity`, `Anomalies`.
 
 ---
 
 ### 7.3. Точка Входа и Инициализация (`Anomalies.java`)
 
-* **Назначение:** Главный модуль мода (`@Mod`), связывающий жизненный цикл Forge, шины событий, регистрацию контента и подключение загрузчиков датапаков.
+* **Класс:** `Anomalies`
+* **Назначение:** Главный модуль мода (`@Mod("anomalies")`), связывающий жизненный цикл Forge, шины событий, регистрацию контента и подключение загрузчиков датапаков.
 * **Технические детали:**
-* **Регистрация контента:** Инициализирует шину `ITEMS` (`DeferredRegister`) для предмета мультитула и вызывает `EntityInit.register()` для сущностей.
-* **Связывание релоадеров (`AddReloadListenerEvent`):** Подключает к серверному менеджеру ресурсов два критических слушателя — `AnomalyReloadListener` (парсер JSON-конфигураций) и `AnomalyScriptLoader` (компилятор DSL-скриптов).
-* **Регистрация команд (`RegisterCommandsEvent`):** Передает серверный диспетчер команд в `AnomalyCommands.register()`.
+* **Регистрация предметов:** Инициализирует `DeferredRegister<Item> ITEMS` и регистрирует предмет-мультитул `ANOMALY_MULTITOOL` (`AnomalyMultitoolItem` с ограничением `stacksTo(1)`).
+* **Связывание шин:** Регистрирует шины предметов `ITEMS.register(modEventBus)` и сущностей `EntityInit.register(modEventBus)`. Подписывает текущий экземпляр на шину событий Forge (`MinecraftForge.EVENT_BUS.register(this)`).
+* **Слушатели загрузки датапаков (`onAddReloadListeners`):** На событие `AddReloadListenerEvent` регистрирует в серверном менеджере ресурсов два ключевых релоадера:
+* `AnomalyReloadListener` — парсер JSON-конфигураций состояний и рецептов.
+* `AnomalyScriptLoader` — компилятор DSL-скриптов поведения.
 
-* **Связи:** `AnomalyReloadListener`, `AnomalyScriptLoader`, `AnomalyCommands`, `EntityInit`, `AnomalyMultitoolItem`.
+* **Регистрация команд (`onRegisterCommands`):** Передает серверный диспетчер команд `event.getDispatcher()` в `AnomalyCommands.register()`.
+* **Связи:** `AnomalyReloadListener`, `AnomalyScriptLoader`, `AnomalyCommands`, `EntityInit`, `AnomalyMultitoolItem`, `DeferredRegister`, `IEventBus`, `MinecraftForge`.
 
 ---
 
 ## 8. Движок Скриптов DSL (`dsl`)
 
-*Пакет:* `net.void_.anomalies.dsl`
+*Пакеты:* `net.void_.anomalies.grammar`, `net.void_.anomalies.dsl`
 
 Полная техническая спецификация подсистемы интерпретации, загрузки и runtime-выполнения DSL-скриптов управления поведением аномалий.
 
 ---
 
-### 8.1. Модели Данных и Реестр Скриптов (`dsl.model`, `dsl.registry`)
+### 8.1. Грамматика и Синтаксис Языка (`net.void_.anomalies.grammar.AnomalyDSL.g4`)
+
+* **Назначение:** ANTLR4-спецификация формальной грамматики DSL. Определяет правила лексического и синтаксического анализа скриптов поведений `.anom`.
+* **Структура Деклараций и Дерево Разбора (Parser Rules):**
+* **`script` / `statement`:** Корень скрипта, состоящий из произвольной последовательности деклараций и заканчивающийся `EOF`.
+* **`bindClause`:** Декларация связывания состояния с JSON-файлом конфигурации фазы.
+* *Синтаксис:* `state <ID> --> "<jsonPath>";` *(пример: `state idle --> "zharka/idle.json";`)*.
+
+* **`recipeBindClause`:** Декларация связывания имени рецепта с JSON-файлом рецепта.
+* *Синтаксис:* `recipe <ID> --> "<jsonPath>";` *(пример: `recipe cook_pork --> "recipes/cook_pork.json";`)*.
+
+* **`initialStateClause`:** Назначение стартового состояния стейт-машины.
+* *Синтаксис:* `initial = <ID>;` *(пример: `initial = idle;`)*.
+
+* **`stateBlock` / `stateElement`:** Блок описания логики фазы. Содержит переходы между состояниями (`transitionRule`) и привязки активных рецептов (`recipeBlock`).
+* *Синтаксис:* `state <ID> { recipe { <recipeRef>* } <transitionRule>* }`.
+
+* **`transitionRule`:** Правило фазового перехода. Вычисляет логическое выражение `expression` и, при `true`, инициирует смену состояния.
+* *Синтаксис:* `when <expression> -> <targetState>;`.
+
+* **Приоритет Логических Операторов (`expression`):**
+  Порядок вычисления выражений зафиксирован на уровне синтаксического дерева (от высшего приоритета к низшему):
+1. **Группировка:** Скобки `( expr )` (`ParenExpr`).
+2. **Унарное отрицание:** `not` / `!` (`NotExpr`).
+3. **Конъюнкция:** `and` / `&&` (`AndExpr`).
+4. **Дизъюнкция:** `or` / `||` (`OrExpr`).
+5. **Атомарные условия:** `primaryCondition` (`PrimaryExpr`).
+
+* **Атомарные Предикаты (`primaryCondition`):**
+* `timer(INT)` — проверка нахождения в состоянии не менее указанного количества тиков.
+* `chance(NUMBER)` — вероятностный генератор (`0.0 ... 1.0`).
+* `player.<eventName>(zone)` — событийный предикат взаимодействия игрока с зоной (принимает имя или числовой индекс зоны).
+
+* **Лексический Анализ (Lexer Rules):**
+* **Ключевые слова:** `state`, `initial`, `when`, `timer`, `chance`, `player`, `recipe`.
+* **Строгое разделение стрелок:** Оператор связывания JSON `-->` (`BIND_ARROW`) синтаксически изолирован от оператора перехода состояния `->` (`TRANSITION_ARROW`), что полностью исключает коллизии при парсинге.
+* **Синонимы операторов:** Поддерживаются как классические текстовые ключевые слова (`and`, `or`, `not`), так и их символьные Java/C-эквиваленты (`&&`, `||`, `!`).
+* **Игнорирование мусора:** Комментарии (`// ...`, `/* ... */`) и пробельные символы (`WS`) автоматически сбрасываются на этапе лексического анализа через каналы `skip`.
+
+* **Связи:** ANTLR Tool Chain, `AnomalyDSLLexer`, `AnomalyDSLParser`, `AnomalyAstBuilder`.
+
+---
+
+### 8.2. Модели Данных и Реестр Скриптов (`dsl.model`, `dsl.registry`)
 
 #### `TransitionRule` (`dsl.model`)
 
@@ -640,17 +893,20 @@ net.void_.anomalies
 #### `AnomalyScriptModel` (`dsl.model`)
 
 * **Класс:** `AnomalyScriptModel` (имплементирует `IAnomalyStateBehavior`)
-* **Назначение:** Исполняемый runtime-скрипт аномалии. Хранит связки фаз с JSON-конфигурациями, граф переходов и выполняет роль стейт-машины при тике сущности.
+* **Назначение:** Исполняемый runtime-скрипт аномалии. Хранит связки фаз и рецептов с JSON-конфигурациями, маппинг рецептов по состояниям, граф переходов и исполняет роль стейт-машины при тике сущности.
 * **Поля:**
-* `Map<String, String> binds` — маппинг имени состояния на путь к JSON-файлу фазы.
-* `Map<String, List<TransitionRule>> transitions` — граф переходов (состояние -> список правил `TransitionRule`).
+* `Map<String, String> binds` — маппинг имени состояния на путь к JSON-файлу фазы (`state` -> `jsonPath`).
+* `Map<String, String> recipeBinds` — маппинг имени рецепта на путь к JSON-файлу рецепта (`recipeName` -> `jsonPath`).
+* `Map<String, List<TransitionRule>> transitions` — граф переходов (`state` -> список правил `TransitionRule`).
+* `Map<String, List<String>> stateRecipes` — привязка рецептов к состояниям (`state` -> список имён рецептов).
 * `String initialState` — стартовое состояние (по умолчанию `"idle"`).
 
 * **Технические детали:**
-* `addBind(state, jsonPath)` / `addTransition(state, rule)` / `setInitialState(state)`.
+* `addBind(state, jsonPath)` / `addRecipeBind(recipeName, jsonPath)` / `addRecipeToState(state, recipeName)` — методы наполнения модели при парсинге.
+* `getRecipesForState(state)` — возвращает список активных рецептов для указанной фазы (или пустой список при отсутствии).
 * **Исполнение тика (`onTick`):**
 1. Извлекает текущее состояние `anomaly.getCurrentState()`.
-2. Если для текущего состояния отсутствуют правила `transitions`, возвращает `null`.
+2. Если для текущего состояния отсутствуют правила в `transitions`, возвращает `null`.
 3. Запрашивает snapshot событий зон с авто-очисткой сгоревших фреймов через `TransientZoneCache.getSnapshotAndFlush(anomaly)`.
 4. Создает `EvaluationContext(anomaly, ticksInState, zoneEvents)`.
 5. Последовательно проверяет условия `rule.condition().test(ctx)` в порядке добавления. Возвращает `targetState` первого сработавшего правила.
@@ -666,7 +922,7 @@ net.void_.anomalies
 
 ---
 
-### 8.2. Абстрактное Синтаксическое Дерево (AST) Условий (`dsl.ast`)
+### 8.3. Абстрактное Синтаксическое Дерево (AST) Условий (`dsl.ast`)
 
 #### `ICondition` (`dsl.ast`)
 
@@ -686,17 +942,27 @@ net.void_.anomalies
 
 ---
 
-### 8.3. Парсинг и Загрузка Скриптов (`dsl.visitor`, `dsl.loader`)
+### 8.4. Парсинг и Загрузка Скриптов (`dsl.visitor`, `dsl.loader`)
 
 #### `AnomalyAstBuilder` (`dsl.visitor`)
 
 * **Класс:** `AnomalyAstBuilder` (расширяет `AnomalyDSLBaseVisitor<Object>`)
 * **Назначение:** AST-посетитель (Visitor) дерева разбора ANTLR. Преобразует синтаксическое дерево файла `.anom` в модель `AnomalyScriptModel` и узлы `ICondition`.
 * **Технические детали:**
-* `visitScript`: обход инструкций, обработка `bindClause` (со снятием кавычек с `jsonPath`), `initialStateClause` и `stateBlock`.
-* `visitPlayerZoneCondition`: транслирует строки событий (`entered_zone` -> `ENTERED`, `exited_zone` -> `EXITED`, `in_zone` -> `IN_ZONE`) и очищает от кавычек строковые или числовые идентификаторы зон.
+* **`visitScript`:** Обход элементов верхнего уровня:
+* `bindClause` — регистрирует связку состояния и JSON-конфига в `model.addBind()` (со снятием кавычек).
+* `recipeBindClause` — регистрирует связку рецепта и JSON-файла рецепта в `model.addRecipeBind()`.
+* `initialStateClause` — переопределяет `initialState`.
+* `stateBlock` — парсит имя фазы и обходит внутренние элементы:
+* `transitionRule` — строит AST условия `ICondition` и добавляет `TransitionRule` в `model.addTransition()`.
+* `recipeBlock` — обходит ссылки `recipeRef` и привязывает имена рецептов к фазе через `model.addRecipeToState()`.
 
-* **Связи:** `AnomalyDSLBaseVisitor`, `AnomalyDSLParser`, `AnomalyScriptModel`, `TransitionRule`, `ICondition`, `ZoneEventType`.
+* **Логические условия и логика:**
+* `visitParenExpr`, `visitNotExpr`, `visitAndExpr`, `visitOrExpr` — рекурсивно собирают дерево логических операций (`NotCondition`, `AndCondition`, `OrCondition`).
+* `visitTimerCondition` / `visitChanceCondition` — конструируют листовые условия таймера и вероятности.
+* `visitPlayerZoneCondition` — транслирует строки событий (`entered_zone` -> `ENTERED`, `exited_zone` -> `EXITED`, `in_zone` -> `IN_ZONE`), очищает имя зоны от кавычек и создает `PlayerZoneCondition`.
+
+* **Связи:** `AnomalyDSLBaseVisitor`, `AnomalyDSLParser`, `AnomalyScriptModel`, `TransitionRule`, `ICondition`, `ZoneEventType`, `NotCondition`, `AndCondition`, `OrCondition`, `TimerCondition`, `ChanceCondition`, `PlayerZoneCondition`.
 
 #### `AnomalyScriptLoader` (`dsl.loader`)
 
@@ -704,19 +970,22 @@ net.void_.anomalies
 * **Назначение:** Двухфазный асинхронный датапак-загрузчик DSL-скриптов из папок `data/<mod_id>/anomalies/<folder>/<folder>.anom`.
 * **Технические детали:**
 * **Асинхронная фаза (`loadScripts`):** Сканирует ресурсы `.anom`. Рассчитывает `folderIndex` с учетом наличия префикса `anomalies/` и группирует файлы по родительским папкам.
-* **Валидация структуры:**
+* **Валидация структуры файлов:**
 * Корневые файлы в `anomalies/` без подпапки блокируются с ошибкой `CRITICAL DSL ERROR`.
 * Отсутствие файла `<folderName>.anom` внутри подпапки логируется как `CRITICAL DSL ERROR`.
 * При наличии нескольких `.anom` файлов в одной папке выводится `DSL WARNING`, а исполняется строго `<folderName>.anom`.
 
-* **Синхронная фаза (`apply`):** Вызывает `AnomalyScriptRegistry.clear()`, валидирует связки фаз через `validateScriptBinds` и регистрирует скрипты в реестре.
-* **Валидация связок (`validateScriptBinds`):** Требует явное наличие расширения `.json` в путях состояний и проверяет существование связанных JSON-дефинишенов через `AnomalyReloadListener.hasState(...)`.
+* **Компиляция:** Считывает UTF-8 стрим, пропускает через `AnomalyDSLLexer` -> `AnomalyDSLParser` -> `AnomalyAstBuilder` и формирует карту скомпилированных моделей.
+* **Синхронная фаза (`apply`):** Вызывает `AnomalyScriptRegistry.clear()`, валидирует связки фаз и рецептов через `validateScriptBinds` и регистрирует скрипты в реестре.
+* **Двухуровневая валидация связок (`validateScriptBinds`):**
+1. **Валидация состояний (`binds`):** Требует явное наличие расширения `.json` в путях и проверяет существование фазы в датапаках через `AnomalyReloadListener.hasState(anomalyType, state)`.
+2. **Валидация рецептов (`recipeBinds`):** Требует явное наличие расширения `.json` в путях и проверяет наличие зарегистрированного JSON-рецепта через `AnomalyReloadListener.hasRecipe(anomalyType, recipeName)`.
 
 * **Связи:** `PreparableReloadListener`, `AnomalyDSLLexer`, `AnomalyDSLParser`, `AnomalyAstBuilder`, `AnomalyScriptModel`, `AnomalyScriptRegistry`, `AnomalyReloadListener`.
 
 ---
 
-### 8.4. Контекст Исполнения и Кэширование (`dsl.context`, `dsl.cache`)
+### 8.5. Контекст Исполнения и Кэширование (`dsl.context`, `dsl.cache`)
 
 #### `EvaluationContext` (`dsl.context`)
 
@@ -748,7 +1017,7 @@ net.void_.anomalies
 
 ---
 
-### 8.5. Событийно-Ориентированная Шина (`dsl.event`)
+### 8.6. Событийно-Ориентированная Шина (`dsl.event`)
 
 #### `AnomalyEventListener` (`dsl.event`)
 

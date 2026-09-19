@@ -10,6 +10,7 @@ script
 
 statement
     : bindClause
+    | recipeBindClause
     | initialStateClause
     | stateBlock
     ;
@@ -19,14 +20,32 @@ bindClause
     : STATE stateName=ID BIND_ARROW jsonPath=STRING_LITERAL ';'?
     ;
 
+// recipe cook_pork --> "recipes/cook_pork.json"
+recipeBindClause
+    : RECIPE recipeName=ID BIND_ARROW jsonPath=STRING_LITERAL ';'?
+    ;
+
 // initial = idle
 initialStateClause
     : INITIAL ASSIGN stateName=ID ';'?
     ;
 
-// state idle { ... }
+// state warmup { recipe { cook_pork; } when timer(50) -> burst; }
 stateBlock
-    : STATE stateName=ID '{' transitionRule* '}'
+    : STATE stateName=ID '{' stateElement* '}'
+    ;
+
+stateElement
+    : transitionRule
+    | recipeBlock
+    ;
+
+recipeBlock
+    : RECIPE '{' recipeRef* '}'
+    ;
+
+recipeRef
+    : recipeName=ID ';'?
     ;
 
 // when timer(200) and player.entered_zone("trigger") -> warmup
@@ -60,6 +79,7 @@ WHEN    : 'when' ;
 TIMER   : 'timer' ;
 CHANCE  : 'chance' ;
 PLAYER  : 'player' ;
+RECIPE  : 'recipe' ;
 
 AND     : 'and' | '&&' ;
 OR      : 'or'  | '||' ;
