@@ -69,4 +69,11 @@ public class OverrideHelper {
                 (t.interval() != null ? t.interval().getDouble() : 5);
         return new MinMaxRange(min, min);
     }
+
+    public static AnomalyShape getShape(CompoundTag tag, AnomalyShape defaultShape) {
+        if (tag != null && tag.contains("shape")) {
+            return AnomalyShape.fromString(tag.getString("shape"));
+        }
+        return defaultShape != null ? defaultShape : AnomalyShape.CYLINDER;
+    }
 }

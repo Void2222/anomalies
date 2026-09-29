@@ -13,6 +13,9 @@ import net.minecraft.world.entity.Pose;
 import net.minecraft.world.level.Level;
 import net.minecraftforge.network.NetworkHooks;
 import net.void_.anomalies.anomaly.ZoneFactory;
+import net.void_.anomalies.anomaly.data.AnomalyDefinition;
+import net.void_.anomalies.anomaly.data.AnomalyShape;
+import net.void_.anomalies.anomaly.loader.AnomalyReloadListener;
 import net.void_.anomalies.components.StateMachineComponent;
 
 import java.util.ArrayList;
@@ -197,5 +200,12 @@ public class AnomalyEntity extends Entity {
             }
         }
         return null;
+    }
+    public AnomalyShape getShape() {
+        if (this.customOverrides != null && this.customOverrides.contains("shape")) {
+            return AnomalyShape.fromString(this.customOverrides.getString("shape"));
+        }
+        AnomalyDefinition def = AnomalyReloadListener.get(getAnomalyType(), getCurrentState());
+        return def != null ? def.getShapeOrDefault() : AnomalyShape.CYLINDER;
     }
 }
