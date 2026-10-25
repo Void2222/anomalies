@@ -89,7 +89,7 @@ public class ParticleComponent implements IAnomalyComponent {
                 ClipContext context = new ClipContext(
                         cameraPos,
                         anomalyCenter,
-                        ClipContext.Block.COLLIDER,
+                        ClipContext.Block.VISUAL,
                         ClipContext.Fluid.NONE,
                         localPlayer
                 );
