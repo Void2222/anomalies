@@ -16,7 +16,7 @@ public final class NodeCardRenderer {
     private NodeCardRenderer() {}
 
     /**
-     * Отрисовка всех связей (кривых Безье) в графе.
+     * Отрисовка всех связей (кривых Безье) в графе, включая порталы.
      */
     public static void renderTransitions(GuiGraphics guiGraphics, EditorGraphModel graph, EditorStateNode hoveredNode) {
         PoseStack poseStack = guiGraphics.pose();
@@ -25,27 +25,69 @@ public final class NodeCardRenderer {
             var transitions = sourceNode.getOutgoingTransitions();
             for (int i = 0; i < transitions.size(); i++) {
                 EditorTransition transition = transitions.get(i);
-                EditorStateNode targetNode = graph.getNode(transition.getTargetState());
-                if (targetNode == null) continue;
+                
+                // Проверяем, есть ли выделенный портал для этого перехода
+                net.void_.anomalies.client.gui.editor.model.EditorPortalNode portal = null;
+                for (var p : graph.getPortals()) {
+                    if (p.getId().equals(sourceNode.getStateName() + "_" + i)) {
+                        portal = p;
+                        break;
+                    }
+                }
 
                 float x1 = sourceNode.getOutputPortX(i);
                 float y1 = sourceNode.getOutputPortY(i);
-                float x2 = targetNode.getInputPortX();
-                float y2 = targetNode.getInputPortY();
 
-                // Определение цвета линии по статусу дифф и активности
+                float x2, y2;
+                if (portal != null) {
+                    x2 = portal.getInputPortX();
+                    y2 = portal.getInputPortY();
+                } else {
+                    EditorStateNode targetNode = graph.getNode(transition.getTargetState());
+                    if (targetNode == null) continue;
+                    x2 = targetNode.getInputPortX();
+                    y2 = targetNode.getInputPortY();
+                }
+
                 int colorFrom = getColorForStatus(sourceNode.getDiffStatus());
-                int colorTo = getColorForStatus(targetNode.getDiffStatus());
+                int colorTo = (portal != null) ? 0xFF00FFCC : 0xFF58A6FF;
 
                 if (sourceNode.isCurrentlyActive()) {
-                    colorFrom = 0xFF00FFCC; // Неоновый циан
+                    colorFrom = 0xFF00FFCC;
                     colorTo = 0xFF00AAFF;
                 }
 
-                float thickness = (sourceNode == hoveredNode || targetNode == hoveredNode) ? 3.5f : 2.0f;
+                float thickness = (sourceNode == hoveredNode) ? 3.5f : 2.0f;
                 CanvasRenderUtils.renderBezierCurve(poseStack, x1, y1, x2, y2, colorFrom, colorTo, thickness);
             }
         }
+    }
+
+    /**
+     * Отрисовка ноды-портала (Jump Node)
+     */
+    public static void renderPortal(GuiGraphics guiGraphics, Font font, net.void_.anomalies.client.gui.editor.model.EditorPortalNode portal, boolean isHovered) {
+        int x = (int) portal.getX();
+        int y = (int) portal.getY();
+        int w = (int) portal.getWidth();
+        int h = (int) portal.getHeight();
+
+        // Скругленная капсула портала
+        int bg = isHovered ? 0xFF2D333F : 0xEE1E222B;
+        int border = isHovered ? 0xFF00FFCC : 0xFF353B47;
+
+        guiGraphics.fill(x, y, x + w, y + h, bg);
+        guiGraphics.renderOutline(x, y, w, h, border);
+
+        // Входной порт слева
+        int inX = (int) portal.getInputPortX();
+        int inY = (int) portal.getInputPortY();
+        guiGraphics.fill(inX - 3, inY - 3, inX + 3, inY + 3, 0xFF00FFCC);
+        guiGraphics.renderOutline(inX - 3, inY - 3, 6, 6, 0xFFFFFFFF);
+
+        // Текст "➔ target"
+        String label = "➔ " + truncate(portal.getTargetState(), 10);
+        guiGraphics.drawString(font, label, x + 8, y + (h - 8) / 2, 0xFF00FFCC, false);
     }
 
     /**

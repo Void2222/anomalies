@@ -254,6 +254,12 @@ public class NodeGraphScreen extends Screen {
         // Сбрасываем сырой рендер перед рендером карточек через GuiGraphics
         guiGraphics.flush();
 
+        // Рендерим ноды-порталы (Jump Nodes)
+        for (net.void_.anomalies.client.gui.editor.model.EditorPortalNode portal : graph.getPortals()) {
+            boolean isHovered = portal.contains(canvasMouseX, canvasMouseY);
+            NodeCardRenderer.renderPortal(guiGraphics, this.font, portal, isHovered);
+        }
+
         // Затем отрисовываем сами карточки состояний
         for (EditorStateNode node : graph.getNodes()) {
             boolean isSelected = (node == selectedNode);
@@ -264,7 +270,10 @@ public class NodeGraphScreen extends Screen {
         poseStack.popPose();
         guiGraphics.flush();
 
-        // 5. Отрисовка адаптивного статус-бара и плоских кнопок поверх холста
+        // 5. Выдвижная правая панель свойств (Side Inspector)
+        renderSideInspector(guiGraphics, mouseX, mouseY);
+
+        // 6. Отрисовка адаптивного статус-бара и плоских кнопок поверх холста
         renderOverlayHeader(guiGraphics, mouseX, mouseY);
     }
 
@@ -338,7 +347,21 @@ public class NodeGraphScreen extends Screen {
                 }
             }
 
-            // 2. Клик по самой ноде для выделения и перетаскивания
+            // 2. Клик по ноде-порталу (Jump-портал): телепортирует камеру на целевой стейт!
+            for (var portal : graph.getPortals()) {
+                if (portal.contains(canvasMouseX, canvasMouseY)) {
+                    EditorStateNode target = graph.getNode(portal.getTargetState());
+                    if (target != null) {
+                        this.selectedNode = target;
+                        // Центрируем камеру ровно на целевую ноду
+                        graph.setPanX(this.width / 2.0f - (target.getX() + target.getWidth() / 2.0f) * graph.getZoom());
+                        graph.setPanY(this.height / 2.0f - (target.getY() + target.getHeight() / 2.0f) * graph.getZoom());
+                    }
+                    return true;
+                }
+            }
+
+            // 3. Клик по самой ноде для выделения и перетаскивания
             for (EditorStateNode node : graph.getNodes()) {
                 if (node.contains(canvasMouseX, canvasMouseY)) {
                     this.selectedNode = node;
@@ -419,6 +442,52 @@ public class NodeGraphScreen extends Screen {
         return super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
     }
 
+    private void renderSideInspector(GuiGraphics guiGraphics, int mouseX, int mouseY) {
+        int panelWidth = 190;
+        int panelX = this.width - panelWidth;
+        int panelY = 36;
+        int panelH = this.height - 36;
+
+        // Фон боковой панели инспектора
+        guiGraphics.fill(panelX, panelY, this.width, this.height, 0xF5161820);
+        guiGraphics.renderOutline(panelX, panelY, 1, panelH, 0xFF2A2D37);
+
+        // Шапка инспектора
+        guiGraphics.drawString(this.font, "⚡ ИНСПЕКТОР СВОЙСТВ", panelX + 12, panelY + 12, 0xFF58A6FF, false);
+
+        if (selectedNode != null) {
+            int curY = panelY + 34;
+
+            guiGraphics.drawString(this.font, "Состояние:", panelX + 12, curY, 0x8B949E, false);
+            guiGraphics.drawString(this.font, selectedNode.getStateName(), panelX + 12, curY + 12, 0xFFFFFF, false);
+            curY += 30;
+
+            guiGraphics.drawString(this.font, "Тип: " + (selectedNode.isInitial() ? "[START Стейт]" : "[Обычный]"), panelX + 12, curY, 0x3FB950, false);
+            curY += 20;
+
+            guiGraphics.drawString(this.font, "Привязка к JSON:", panelX + 12, curY, 0x8B949E, false);
+            String jsonPath = selectedNode.getBoundJsonPath().isEmpty() ? "(нет)" : selectedNode.getBoundJsonPath();
+            guiGraphics.drawString(this.font, jsonPath, panelX + 12, curY + 12, 0xC0C8D4, false);
+            curY += 30;
+
+            guiGraphics.drawString(this.font, "Переходы (" + selectedNode.getOutgoingTransitions().size() + "):", panelX + 12, curY, 0xFFA500, false);
+            curY += 14;
+
+            for (var t : selectedNode.getOutgoingTransitions()) {
+                String desc = "• " + t.getTargetState() + " (" + t.getConditionExpression() + ")";
+                guiGraphics.drawString(this.font, desc, panelX + 12, curY, 0x8B949E, false);
+                curY += 14;
+            }
+
+            curY += 10;
+            // Подсказка по созданию портала
+            guiGraphics.drawString(this.font, "[P] Создать Jump-портал", panelX + 12, curY, 0x00FFCC, false);
+        } else {
+            guiGraphics.drawString(this.font, "Выберите узел на холсте", panelX + 12, panelY + 40, 0x8B949E, false);
+            guiGraphics.drawString(this.font, "для редактирования", panelX + 12, panelY + 52, 0x58A6FF, false);
+        }
+    }
+
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double delta) {
         float oldZoom = graph.getZoom();
@@ -437,6 +506,29 @@ public class NodeGraphScreen extends Screen {
         }
 
         return super.mouseScrolled(mouseX, mouseY, delta);
+    }
+
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        // Клавиша 'P' — превратить последний переход выбранной ноды в Jump-портал или создать портал
+        if (keyCode == 80 && selectedNode != null) { // 80 = 'P'
+            var transitions = selectedNode.getOutgoingTransitions();
+            if (!transitions.isEmpty()) {
+                int lastIdx = transitions.size() - 1;
+                var t = transitions.get(lastIdx);
+                String portalId = selectedNode.getStateName() + "_" + lastIdx;
+
+                // Добавляем портал прямо рядом с выходом ноды
+                float px = selectedNode.getX() + selectedNode.getWidth() + 60.0f;
+                float py = selectedNode.getOutputPortY(lastIdx) - 10.0f;
+
+                graph.getPortals().removeIf(p -> p.getId().equals(portalId));
+                graph.addPortal(new net.void_.anomalies.client.gui.editor.model.EditorPortalNode(portalId, t.getTargetState(), px, py));
+                graph.setDirty(true);
+                return true;
+            }
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
     @Override

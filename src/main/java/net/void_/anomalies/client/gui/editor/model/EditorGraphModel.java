@@ -13,6 +13,7 @@ public class EditorGraphModel {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
     private final Map<String, EditorStateNode> nodes = new LinkedHashMap<>();
+    private final List<EditorPortalNode> portals = new ArrayList<>();
     private float panX = 100.0f;
     private float panY = 100.0f;
     private float zoom = 1.0f;
@@ -24,8 +25,23 @@ public class EditorGraphModel {
         isDirty = true;
     }
 
+    public void addPortal(EditorPortalNode portal) {
+        portals.add(portal);
+        isDirty = true;
+    }
+
+    public void removePortal(EditorPortalNode portal) {
+        portals.remove(portal);
+        isDirty = true;
+    }
+
+    public List<EditorPortalNode> getPortals() {
+        return portals;
+    }
+
     public void removeNode(String stateName) {
         nodes.remove(stateName);
+        portals.removeIf(p -> p.getTargetState().equals(stateName));
         // Удаляем все переходы, ведущие в эту ноду
         for (EditorStateNode node : nodes.values()) {
             node.getOutgoingTransitions().removeIf(t -> t.getTargetState().equals(stateName));
