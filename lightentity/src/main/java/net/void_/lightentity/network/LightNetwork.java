@@ -46,5 +46,13 @@ public class LightNetwork {
                 ClientboundSyncLightEntityPacket::decode,
                 ClientboundSyncLightEntityPacket::handle
         );
+
+        CHANNEL.registerMessage(
+                packetId++,
+                net.void_.lightentity.network.packet.ServerboundInteractLightEntityPacket.class,
+                net.void_.lightentity.network.packet.ServerboundInteractLightEntityPacket::encode,
+                net.void_.lightentity.network.packet.ServerboundInteractLightEntityPacket::decode,
+                net.void_.lightentity.network.packet.ServerboundInteractLightEntityPacket::handle
+        );
     }
 }
