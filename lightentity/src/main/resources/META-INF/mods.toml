@@ -1,0 +1,10 @@
+modLoader="javafml"
+loaderVersion="[47,)"
+license="MIT"
+
+[[mods]]
+modId="lightentity"
+version="1.0.0"
+displayName="LightEntity Engine"
+description='''A ultra-lightweight spatial entity engine decoupled from Minecraft Entity monolith.'''
+authors="Void"

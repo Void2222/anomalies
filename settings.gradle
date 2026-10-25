@@ -13,3 +13,4 @@ plugins {
 }
 
 rootProject.name = 'anomalies'
+include 'lightentity'
