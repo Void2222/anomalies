@@ -1,36 +1,36 @@
-# ⚙️ Архитектура Мода Anomalies (HLD)
+# ⚙️ Anomalies Mod Architecture (HLD)
 
-`Anomalies` — это событийно-ориентированный, дата-дривен мод для **Minecraft Forge 1.20.1**, воссоздающий физические и динамические аномальные зоны со сложными конечными автоматами, поддержкой крафта предметов в мире и собственным языком описания сценариев (`.anom`).
-
----
-
-## 🏛️ Ключевые архитектурные принципы
-
-1. **Декаплинг от ванильного Entity:**  
-   Аномалии больше не являются ванильными `Entity`. Они работают на базе высокопроизводительного автономного движка **[LightEntity](file:///d:/VisualStudio/Java/anomalies/lightentity/README.md)**. Это гарантирует отсутствие серверных лагов, минимальное потребление RAM (~200 байт/аномалия) и независимое хранение внутри чанков.
-2. **Composition Over Inheritance (ECS-подход):**  
-   Инстанс аномалии (`LightAnomalyInstance`) — это лёгкий runtime-контейнер. Вся прикладная логика (гравитация, урон, звук, частицы, крафты) разбита на изолированные компоненты (`IAnomalyComponent`).
-3. **Data-Driven архитектура:**  
-   Все параметры аномалий (радиусы зон, формулы урона, кривые импульсов, звуки и частицы) задаются через внешние JSON-датапаки.
-4. **Конечные автоматы и скриптовый DSL:**  
-   Поведение аномалий описывается декларативным скриптовым языком `.anom` (компилируется через ANTLR4 в AST-модель выполнения).
+`Anomalies` is an event-driven, data-driven mod for **Minecraft Forge 1.20.1**, creating dynamic physical anomaly zones with state machines, in-world transmutation recipes, and its own domain-specific scripting language (`.anom`).
 
 ---
 
-## 🗺️ Общая схема подсистем
+## 🏛️ Core Architectural Principles
+
+1. **Decoupled from Vanilla Entity:**  
+   Anomalies do not extend vanilla `Entity`. They run on top of the high-performance **[LightEntity Engine](file:///d:/VisualStudio/Java/anomalies/lightentity/README.md)**. This guarantees zero server-side tick lag, minimal RAM consumption (~200 bytes per instance), and chunk-based storage.
+2. **Composition Over Inheritance (ECS Pattern):**  
+   An anomaly instance (`LightAnomalyInstance`) is a lightweight runtime container. All domain logic (physics, damage, sound, particles, recipes) is encapsulated in standalone components (`IAnomalyComponent`).
+3. **Data-Driven Architecture:**  
+   All anomaly properties (zone radii, damage curves, impulse vectors, sounds, and particles) are loaded from external JSON datapacks.
+4. **State Machines & DSL Scripting:**  
+   Anomaly behaviors and phase transitions are defined using a declarative `.anom` script language, compiled via ANTLR4 into an AST execution model.
+
+---
+
+## 🗺️ High-Level Subsystem Flow
 
 ```mermaid
 graph TD
-    DP[JSON Датапаки] -->|Загрузка| ARL[AnomalyReloadListener]
-    SCR[Скрипты .anom] -->|ANTLR4 / AST| ASR[AnomalyScriptRegistry]
+    DP[JSON Datapacks] -->|Load| ARL[AnomalyReloadListener]
+    SCR[.anom Scripts] -->|ANTLR4 / AST| ASR[AnomalyScriptRegistry]
     
     ARL --> ZF[ZoneFactory]
     ASR --> ZF
     
-    ZF -->|Сборка компонентов| LAI[LightAnomalyInstance]
-    LAI -->|Регистрация| WLM[WorldLightManager (LightEntity)]
+    ZF -->|Assemble Components| LAI[LightAnomalyInstance]
+    LAI -->|Register| WLM[WorldLightManager (LightEntity)]
     
-    subgraph "Компоненты Аномалии"
+    subgraph "Anomaly Components"
         SMC[StateMachineComponent]
         TC[TriggerComponent]
         IC[ImpulseComponent]
@@ -51,21 +51,23 @@ graph TD
 
 ---
 
-## 📚 Навигация по детальной документации (`docs/`)
+## 📚 Documentation Navigation (`docs/`)
 
-Вся подробная техническая документация и руководства разделены по специализированным разделам:
+Detailed documentation is available in both Russian and English:
 
-### 🛠️ Для разработчиков ядра и аддонов (`docs/dev/`)
-- **[Компоненты движка (`docs/dev/ecs-components.md`)](file:///d:/VisualStudio/Java/anomalies/docs/dev/ecs-components.md):** Полный справочник встроенных компонентов, алгоритмы отсечения рендеринга частиц (Frustum & Occlusion Culling), физика импульсов и крафт.
-- **[Жизненный цикл и фабрика зон (`docs/dev/lifecycle-and-zones.md`)](file:///d:/VisualStudio/Java/anomalies/docs/dev/lifecycle-and-zones.md):** `LightAnomalyInstance`, сборка в `ZoneFactory`, структура слоёв зон и кэш оверрайдов.
-- **[Событийное API (`docs/dev/event-api.md`)](file:///d:/VisualStudio/Java/anomalies/docs/dev/event-api.md):** События Forge (`AnomalyTriggerEvent`, `AnomalyDamageEvent`, `AnomalyPhysicsEvent` и др.), интеграция аддонов.
-- **[Движок DSL-скриптов (`docs/dev/dsl-engine.md`)](file:///d:/VisualStudio/Java/anomalies/docs/dev/dsl-engine.md):** Грамматика ANTLR4, компиляция AST, контекст выполнения и кэш `TransientZoneCache`.
-- **[Движок LightEntity (`lightentity/README.md`)](file:///d:/VisualStudio/Java/anomalies/lightentity/README.md):** Внутреннее устройство автономного движка легковесных сущностей.
+- **[Русская документация (`docs/ru/`)](file:///d:/VisualStudio/Java/anomalies/docs/ru/dev/ecs-components.md)**
 
-### 📜 Для создателей датапаков (`docs/datapacks/`)
-- **[Спецификация JSON-форматов (`docs/datapacks/formats.md`)](file:///d:/VisualStudio/Java/anomalies/docs/datapacks/formats.md):** Структура файлов аномалий, настройки триггеров, звуков, частиц и слоёв зон.
-- **[Синтаксис языка сценариев .anom (`docs/datapacks/dsl-syntax.md`)](file:///d:/VisualStudio/Java/anomalies/docs/datapacks/dsl-syntax.md):** Руководство по написанию логики состояний, таймеров, вероятностей и переходов.
+### 🛠️ For Java & Addon Developers (`docs/en/dev/`)
+- **[Engine ECS Components (`docs/en/dev/ecs-components.md`)](file:///d:/VisualStudio/Java/anomalies/docs/en/dev/ecs-components.md):** Complete component reference, culling algorithms (Frustum & VISUAL Occlusion), impulse physics, and recipe crafting.
+- **[Lifecycle & Zone Factory (`docs/en/dev/lifecycle-and-zones.md`)](file:///d:/VisualStudio/Java/anomalies/docs/en/dev/lifecycle-and-zones.md):** `LightAnomalyInstance`, `ZoneFactory` assembly, zone layer hierarchy, and runtime overrides.
+- **[Event API (`docs/en/dev/event-api.md`)](file:///d:/VisualStudio/Java/anomalies/docs/en/dev/event-api.md):** Forge Events (`AnomalyTriggerEvent`, `AnomalyDamageEvent`, `AnomalyPhysicsEvent`, etc.).
+- **[DSL Script Engine (`docs/en/dev/dsl-engine.md`)](file:///d:/VisualStudio/Java/anomalies/docs/en/dev/dsl-engine.md):** ANTLR4 grammar pipeline, AST condition tree, execution context, and `TransientZoneCache`.
+- **[LightEntity Subproject Engine (`lightentity/README.md`)](file:///d:/VisualStudio/Java/anomalies/lightentity/README.md):** Autonomous lightweight entity engine internals.
 
-### 🎮 Для администраторов и тестеров (`docs/manual/`)
-- **[Мультитул администратора (`docs/manual/multitool.md`)](file:///d:/VisualStudio/Java/anomalies/docs/manual/multitool.md):** Анализ, GUI-редактор оверрайдов, перенос и удаление аномалий в реальном времени.
-- **[Консольные команды (`docs/manual/commands.md`)](file:///d:/VisualStudio/Java/anomalies/docs/manual/commands.md):** Синтаксис `/anomaly create`, `/anomaly state set` и система белого списка `/anomaly ignore`.
+### 📜 For Datapack & Modpack Creators (`docs/en/datapacks/`)
+- **[JSON Datapack Formats (`docs/en/datapacks/formats.md`)](file:///d:/VisualStudio/Java/anomalies/docs/en/datapacks/formats.md):** Structure of anomaly JSONs, trigger configs, sounds, particles, and zone layers.
+- **[.anom Scripting Language Syntax (`docs/en/datapacks/dsl-syntax.md`)](file:///d:/VisualStudio/Java/anomalies/docs/en/datapacks/dsl-syntax.md):** Specification for writing state machines, timers, chances, and transitions.
+
+### 🎮 For Server Admins & Testers (`docs/en/manual/`)
+- **[Admin Multitool (`docs/en/manual/multitool.md`)](file:///d:/VisualStudio/Java/anomalies/docs/en/manual/multitool.md):** Analysis, GUI editor, relocation, and deletion of anomalies in real time.
+- **[Console Commands (`docs/en/manual/commands.md`)](file:///d:/VisualStudio/Java/anomalies/docs/en/manual/commands.md):** Command reference for `/anomaly create`, `/anomaly state set`, and `/anomaly ignore`.
