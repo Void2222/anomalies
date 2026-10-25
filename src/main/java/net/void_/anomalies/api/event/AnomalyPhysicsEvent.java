@@ -5,21 +5,21 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.eventbus.api.Cancelable;
 import net.minecraftforge.eventbus.api.Event;
 import net.void_.anomalies.anomaly.data.ZoneConfig;
-import net.void_.anomalies.core.AnomalyEntity;
+import net.void_.anomalies.core.IAnomalyHolder;
 
 import javax.annotation.Nullable;
 
-@Cancelable // Позволяет полностью отменить физическое воздействие аномалии на сущность (например, абсолютная защита костюма)
+@Cancelable
 public class AnomalyPhysicsEvent extends Event {
 
-    private final AnomalyEntity anomaly;
+    private final IAnomalyHolder anomaly;
     private final Entity target;
     private final String anomalyType;
     @Nullable
     private final ZoneConfig zone;
-    private Vec3 deltaMovement; // Изменяемый вектор движения, который будет применен к цели
+    private Vec3 deltaMovement;
 
-    public AnomalyPhysicsEvent(AnomalyEntity anomaly, Entity target, String anomalyType, @Nullable ZoneConfig zone, Vec3 deltaMovement) {
+    public AnomalyPhysicsEvent(IAnomalyHolder anomaly, Entity target, String anomalyType, @Nullable ZoneConfig zone, Vec3 deltaMovement) {
         this.anomaly = anomaly;
         this.target = target;
         this.anomalyType = anomalyType;
@@ -27,7 +27,11 @@ public class AnomalyPhysicsEvent extends Event {
         this.deltaMovement = deltaMovement;
     }
 
-    public AnomalyEntity getAnomaly() {
+    public AnomalyPhysicsEvent(IAnomalyHolder anomaly, Entity target, Vec3 deltaMovement) {
+        this(anomaly, target, anomaly.getAnomalyType(), null, deltaMovement);
+    }
+
+    public IAnomalyHolder getAnomaly() {
         return anomaly;
     }
 
@@ -48,10 +52,6 @@ public class AnomalyPhysicsEvent extends Event {
         return deltaMovement;
     }
 
-    /**
-     * Позволяет сторонним модам (экзоскелетам, антигравитационным поясам, демпферам)
-     * изменить результирующий вектор силы аномалии прямо в процессе тика.
-     */
     public void setDeltaMovement(Vec3 deltaMovement) {
         this.deltaMovement = deltaMovement;
     }

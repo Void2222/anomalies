@@ -22,21 +22,16 @@ import net.void_.anomalies.anomaly.util.OverrideHelper;
 import net.void_.anomalies.anomaly.util.ZoneUtils;
 import net.void_.anomalies.components.*;
 import net.void_.anomalies.config.AnomalyIgnoreManager;
-import net.void_.anomalies.core.AnomalyEntity;
+import net.void_.anomalies.core.IAnomalyHolder;
 import net.void_.anomalies.dsl.model.AnomalyScriptModel;
 import net.void_.anomalies.dsl.registry.AnomalyScriptRegistry;
-import net.void_.anomalies.setup.EntityInit;
 
 import java.util.List;
 import java.util.Optional;
 
 public class ZoneFactory {
 
-    public static void applyComponents(AnomalyEntity anomaly, String type, String state) {
-        applyComponents((net.void_.anomalies.core.IAnomalyHolder) anomaly, type, state);
-    }
-
-    public static void applyComponents(net.void_.anomalies.core.IAnomalyHolder anomaly, String type, String state) {
+    public static void applyComponents(IAnomalyHolder anomaly, String type, String state) {
         AnomalyDefinition definition = AnomalyReloadListener.get(type, state);
         if (definition == null) return;
 
@@ -59,11 +54,7 @@ public class ZoneFactory {
         setupTriggerAndPhysics(anomaly, definition, overrides);
     }
 
-    public static void applyComponents(AnomalyEntity anomaly, String type) {
-        applyComponents(anomaly, type, "idle");
-    }
-
-    public static void applyComponents(net.void_.anomalies.core.IAnomalyHolder anomaly, String type) {
+    public static void applyComponents(IAnomalyHolder anomaly, String type) {
         applyComponents(anomaly, type, "idle");
     }
 
@@ -158,31 +149,21 @@ public class ZoneFactory {
     }
 
     private static void handleTriggerTarget(net.void_.anomalies.core.IAnomalyHolder anomaly, Entity target, ImpulseComponent impulseComp, DamageComponent damageComp, List<ZoneConfig> zones, boolean ignoreAnomalies) {
-        if (ignoreAnomalies && target instanceof AnomalyEntity) return;
         if (target instanceof Player player && AnomalyIgnoreManager.isIgnored(player)) return;
 
         if (impulseComp != null) {
-            if (anomaly instanceof AnomalyEntity ae) {
-                impulseComp.applyImpulse(ae, target);
-            }
+            impulseComp.applyImpulse(anomaly, target);
         }
 
-        ZoneConfig activeZone = null;
-        if (anomaly instanceof AnomalyEntity ae) {
-            activeZone = ZoneUtils.getActiveZone(zones, ae, target);
-        }
+        ZoneConfig activeZone = ZoneUtils.getActiveZone(zones, anomaly, target);
         if (activeZone == null) return;
 
         if (target instanceof ItemEntity itemEntity) {
-            if (anomaly instanceof AnomalyEntity ae) {
-                AnomalyItemInteractEvent itemEvent = new AnomalyItemInteractEvent(ae, itemEntity, anomaly.getAnomalyType());
-                MinecraftForge.EVENT_BUS.post(itemEvent);
-            }
+            AnomalyItemInteractEvent itemEvent = new AnomalyItemInteractEvent(anomaly, itemEntity, anomaly.getAnomalyType());
+            MinecraftForge.EVENT_BUS.post(itemEvent);
         } else {
-            if (anomaly instanceof AnomalyEntity ae) {
-                AnomalyTriggerEvent event = new AnomalyTriggerEvent(ae, target, anomaly.getAnomalyType());
-                if (MinecraftForge.EVENT_BUS.post(event)) return;
-            }
+            AnomalyTriggerEvent event = new AnomalyTriggerEvent(anomaly, target, anomaly.getAnomalyType());
+            if (MinecraftForge.EVENT_BUS.post(event)) return;
 
             if (activeZone.damage() != null) {
                 DamageConfig dConfig = activeZone.damage();
@@ -196,8 +177,8 @@ public class ZoneFactory {
                     String dType = dConfig.damageType() != null ? dConfig.damageType().toLowerCase() : "generic";
                     DamageSource zoneDamageSource = getDamageSource(anomaly, dType);
 
-                    if (anomaly instanceof AnomalyEntity ae) {
-                        damageComp.inflictDamage(ae, target, activeZone, damageRange, zoneDamageSource);
+                    if (damageComp != null) {
+                        damageComp.inflictDamage(anomaly, target, activeZone, damageRange, zoneDamageSource);
                     } else {
                         target.hurt(zoneDamageSource, (float) damageRange.getDouble());
                     }
@@ -213,17 +194,6 @@ public class ZoneFactory {
             case "magic" -> anomaly.getLevel().damageSources().magic();
             default -> anomaly.getLevel().damageSources().generic();
         };
-    }
-
-    public static AnomalyEntity create(Level level, double x, double y, double z, String type) {
-        if (!AnomalyReloadListener.exists(type)) return null;
-
-        AnomalyEntity anomaly = EntityInit.ANOMALY.get().create(level);
-        if (anomaly != null) {
-            anomaly.setPos(x, y, z);
-            anomaly.setAnomalyType(type.toLowerCase());
-        }
-        return anomaly;
     }
 
     public static net.void_.anomalies.core.LightAnomalyInstance createLight(Level level, double x, double y, double z, String type) {

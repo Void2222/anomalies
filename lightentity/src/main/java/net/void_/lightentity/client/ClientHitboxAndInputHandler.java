@@ -88,8 +88,28 @@ public class ClientHitboxAndInputHandler {
         }
     }
 
+    @SubscribeEvent
+    public static void onRightClickBlock(PlayerInteractEvent.RightClickBlock event) {
+        if (!event.getLevel().isClientSide()) return;
+        Player player = event.getEntity();
+        Vec3 blockHit = event.getHitVec().getLocation();
+        double blockDist = player.getEyePosition().distanceTo(blockHit);
+
+        Optional<LightRaycast.RaycastHit> hitOpt = LightRaycast.raycast(player, ClientLightManager.getGrid(), blockDist);
+        if (hitOpt.isPresent()) {
+            event.setCanceled(true);
+            LightRaycast.RaycastHit hit = hitOpt.get();
+            LightNetwork.CHANNEL.sendToServer(new ServerboundInteractLightEntityPacket(
+                    hit.entity().getId(),
+                    ServerboundInteractLightEntityPacket.Action.INTERACT,
+                    event.getHand(),
+                    hit.hitPos()
+            ));
+        }
+    }
+
     /**
-     * Handles Left-Click on empty air to attack / left-click LightEntity hitboxes.
+     * Handles Left-Click on empty air or blocks to attack / left-click LightEntity hitboxes.
      */
     @SubscribeEvent
     public static void onLeftClickEmpty(PlayerInteractEvent.LeftClickEmpty event) {
@@ -98,6 +118,25 @@ public class ClientHitboxAndInputHandler {
 
         Optional<LightRaycast.RaycastHit> hitOpt = LightRaycast.raycast(player, ClientLightManager.getGrid(), 5.0);
         if (hitOpt.isPresent()) {
+            LightRaycast.RaycastHit hit = hitOpt.get();
+            LightNetwork.CHANNEL.sendToServer(new ServerboundInteractLightEntityPacket(
+                    hit.entity().getId(),
+                    ServerboundInteractLightEntityPacket.Action.ATTACK,
+                    InteractionHand.MAIN_HAND,
+                    hit.hitPos()
+            ));
+        }
+    }
+
+    @SubscribeEvent
+    public static void onLeftClickBlock(PlayerInteractEvent.LeftClickBlock event) {
+        if (!event.getLevel().isClientSide()) return;
+        Player player = event.getEntity();
+        double blockDist = player.getEyePosition().distanceTo(Vec3.atCenterOf(event.getPos()));
+
+        Optional<LightRaycast.RaycastHit> hitOpt = LightRaycast.raycast(player, ClientLightManager.getGrid(), blockDist);
+        if (hitOpt.isPresent()) {
+            event.setCanceled(true);
             LightRaycast.RaycastHit hit = hitOpt.get();
             LightNetwork.CHANNEL.sendToServer(new ServerboundInteractLightEntityPacket(
                     hit.entity().getId(),

@@ -4,24 +4,24 @@ import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.eventbus.api.Cancelable;
 import net.minecraftforge.eventbus.api.Event;
-import net.void_.anomalies.core.AnomalyEntity;
+import net.void_.anomalies.core.IAnomalyHolder;
 
-@Cancelable // Позволяет отменять ванильное поведение (например, если другой мод перехватил предмет)
+@Cancelable
 public class AnomalyItemInteractEvent extends Event {
 
-    private final AnomalyEntity anomaly;
+    private final IAnomalyHolder anomaly;
     private final ItemEntity itemEntity;
     private final ItemStack itemStack;
     private final String anomalyType;
 
-    public AnomalyItemInteractEvent(AnomalyEntity anomaly, ItemEntity itemEntity, String anomalyType) {
+    public AnomalyItemInteractEvent(IAnomalyHolder anomaly, ItemEntity itemEntity, String anomalyType) {
         this.anomaly = anomaly;
         this.itemEntity = itemEntity;
-        this.itemStack = itemEntity.getItem(); // Удобный доступ к самому ItemStack
+        this.itemStack = itemEntity.getItem();
         this.anomalyType = anomalyType;
     }
 
-    public AnomalyEntity getAnomaly() {
+    public IAnomalyHolder getAnomaly() {
         return anomaly;
     }
 

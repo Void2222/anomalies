@@ -2,12 +2,14 @@ package net.void_.anomalies.components;
 
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.player.Player;
 import net.minecraftforge.common.MinecraftForge;
 import net.void_.anomalies.api.event.AnomalyDamageEvent;
 import net.void_.anomalies.anomaly.data.MinMaxRange;
 import net.void_.anomalies.anomaly.data.ZoneConfig;
-import net.void_.anomalies.core.AnomalyEntity;
+import net.void_.anomalies.config.AnomalyIgnoreManager;
 import net.void_.anomalies.core.IAnomalyComponent;
+import net.void_.anomalies.core.IAnomalyHolder;
 
 import javax.annotation.Nullable;
 
@@ -21,17 +23,13 @@ public class DamageComponent implements IAnomalyComponent {
         this.defaultDamageSource = defaultDamageSource;
     }
 
-    @Override
-    public void serverTick(AnomalyEntity anomaly) {}
-
-    @Override
-    public void clientTick(AnomalyEntity anomaly) {}
-
-    /**
-     * Вызов нанесения урона по сущности с учетом конкретной зоны
-     */
-    public void inflictDamage(@Nullable AnomalyEntity anomaly, Entity target, @Nullable ZoneConfig zone, @Nullable MinMaxRange specificRange, @Nullable DamageSource overrideSource) {
+    public void inflictDamage(@Nullable IAnomalyHolder anomaly, Entity target, @Nullable ZoneConfig zone, @Nullable MinMaxRange specificRange, @Nullable DamageSource overrideSource) {
         if (target == null || !target.isAlive()) return;
+
+        // Полная защита для игроков из списка игнора
+        if (target instanceof Player player && AnomalyIgnoreManager.isIgnored(player)) {
+            return;
+        }
 
         MinMaxRange rangeToUse = (specificRange != null) ? specificRange : defaultDamageRange;
         if (rangeToUse == null) return;

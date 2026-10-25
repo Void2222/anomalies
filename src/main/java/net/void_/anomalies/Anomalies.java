@@ -17,7 +17,6 @@ import net.void_.anomalies.dsl.loader.AnomalyScriptLoader;
 import net.void_.anomalies.item.AnomalyMultitoolItem;
 import net.void_.anomalies.network.AnomalyNetwork;
 import net.void_.anomalies.setup.AnomalyCommands;
-import net.void_.anomalies.setup.EntityInit;
 import org.slf4j.Logger;
 
 @Mod(Anomalies.MOD_ID)
@@ -39,7 +38,8 @@ public class Anomalies {
         modEventBus.addListener(this::commonSetup);
         MinecraftForge.EVENT_BUS.register(this);
 
-        EntityInit.register(modEventBus);
+        // Ensure LightAnomalyInstance type is registered
+        net.void_.anomalies.core.LightAnomalyInstance.TYPE.getId();
         net.void_.anomalies.test.TestLightAnomaly.init();
     }
 

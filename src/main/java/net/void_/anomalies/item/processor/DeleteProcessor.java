@@ -3,7 +3,9 @@ package net.void_.anomalies.item.processor;
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.player.Player;
-import net.void_.anomalies.core.AnomalyEntity;
+import net.void_.anomalies.core.IAnomalyHolder;
+import net.void_.lightentity.api.ILightEntity;
+import net.void_.lightentity.storage.WorldLightManager;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -17,7 +19,7 @@ public class DeleteProcessor {
 
     private record ConfirmData(UUID anomalyUuid, long timestamp) {}
 
-    public static void process(Player player, AnomalyEntity anomaly, boolean isShiftDown) {
+    public static void process(Player player, IAnomalyHolder anomaly, boolean isShiftDown) {
         // Если зажат Shift — мгновенное удаление без вопросов
         if (isShiftDown) {
             deleteAnomaly(player, anomaly);
@@ -44,8 +46,12 @@ public class DeleteProcessor {
         }
     }
 
-    private static void deleteAnomaly(Player player, AnomalyEntity anomaly) {
-        anomaly.discard();
+    private static void deleteAnomaly(Player player, IAnomalyHolder anomaly) {
+        if (anomaly instanceof ILightEntity le) {
+            WorldLightManager.get(le.getLevel()).remove(le);
+        } else {
+            anomaly.discard();
+        }
         player.sendSystemMessage(Component.literal("§c[Админ] §aАномалия стёрта!").withStyle(ChatFormatting.BOLD));
     }
 }

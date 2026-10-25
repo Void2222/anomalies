@@ -12,7 +12,6 @@ import net.minecraft.server.level.ServerPlayer;
 import net.void_.anomalies.anomaly.ZoneFactory;
 import net.void_.anomalies.anomaly.loader.AnomalyReloadListener;
 import net.void_.anomalies.config.AnomalyIgnoreManager;
-import net.void_.anomalies.core.AnomalyEntity;
 
 import java.util.List;
 
@@ -26,7 +25,7 @@ public class AnomalyCommands {
                         .then(Commands.literal("create")
                                 .then(Commands.argument("type", StringArgumentType.string())
                                         .suggests((context, builder) -> {
-                                            AnomalyReloadListener.getKeys().forEach(key -> builder.suggest(key));
+                                            AnomalyReloadListener.getKeys().forEach(builder::suggest);
                                             return builder.buildFuture();
                                         })
                                         .executes(context -> {
@@ -36,7 +35,7 @@ public class AnomalyCommands {
 
                                             String type = StringArgumentType.getString(context, "type");
 
-                                            AnomalyEntity anomaly = ZoneFactory.create(
+                                            var anomaly = ZoneFactory.createLight(
                                                     level,
                                                     player.getX(),
                                                     player.getY(),
@@ -45,7 +44,7 @@ public class AnomalyCommands {
                                             );
 
                                             if (anomaly != null) {
-                                                level.addFreshEntity(anomaly);
+                                                net.void_.lightentity.storage.WorldLightManager.get(level).spawn(anomaly);
                                                 source.sendSuccess(() -> Component.literal("§aАномалия " + type + " успешно создана!"), true);
                                             } else {
                                                 source.sendFailure(Component.literal("§cАномалия типа '" + type + "' не найдена в JSON!"));
@@ -89,14 +88,14 @@ public class AnomalyCommands {
                                                     var source = context.getSource();
                                                     var player = source.getPlayer();
                                                     if (player != null) {
-                                                        List<AnomalyEntity> anomalies = player.level().getEntitiesOfClass(
-                                                                AnomalyEntity.class,
-                                                                player.getBoundingBox().inflate(10.0)
-                                                        );
-                                                        if (!anomalies.isEmpty()) {
-                                                            AnomalyEntity nearest = anomalies.get(0);
-                                                            AnomalyReloadListener.getStates(nearest.getAnomalyType())
-                                                                    .forEach(state -> builder.suggest(state));
+                                                        var mgr = net.void_.lightentity.storage.WorldLightManager.get(player.serverLevel());
+                                                        var nearby = mgr.getSpatialGrid().queryRadius(player.getX(), player.getY(), player.getZ(), 10.0, null);
+                                                        for (var e : nearby) {
+                                                            if (e instanceof net.void_.anomalies.core.IAnomalyHolder ah) {
+                                                                AnomalyReloadListener.getStates(ah.getAnomalyType())
+                                                                        .forEach(builder::suggest);
+                                                                break;
+                                                            }
                                                         }
                                                     }
                                                     return builder.buildFuture();
@@ -106,24 +105,33 @@ public class AnomalyCommands {
                                                     ServerPlayer player = source.getPlayerOrException();
                                                     String newState = StringArgumentType.getString(context, "state");
 
-                                                    List<AnomalyEntity> anomalies = player.level().getEntitiesOfClass(
-                                                            AnomalyEntity.class,
-                                                            player.getBoundingBox().inflate(10.0)
-                                                    );
+                                                    var mgr = net.void_.lightentity.storage.WorldLightManager.get(player.serverLevel());
+                                                    var nearby = mgr.getSpatialGrid().queryRadius(player.getX(), player.getY(), player.getZ(), 10.0, null);
 
-                                                    if (anomalies.isEmpty()) {
+                                                    net.void_.anomalies.core.IAnomalyHolder target = null;
+                                                    for (var e : nearby) {
+                                                        if (e instanceof net.void_.anomalies.core.IAnomalyHolder ah) {
+                                                            target = ah;
+                                                            break;
+                                                        }
+                                                    }
+
+                                                    if (target == null) {
                                                         source.sendFailure(Component.literal("§cПоблизости (10 блоков) не найдено ни одной аномалии!"));
                                                         return 0;
                                                     }
 
-                                                    AnomalyEntity anomaly = anomalies.get(0);
-                                                    if (!AnomalyReloadListener.hasState(anomaly.getAnomalyType(), newState)) {
-                                                        source.sendFailure(Component.literal("§cУ аномалии '" + anomaly.getAnomalyType() + "' нет состояния '" + newState + "' в JSON!"));
+                                                    if (!AnomalyReloadListener.hasState(target.getAnomalyType(), newState)) {
+                                                        source.sendFailure(Component.literal("§cУ аномалии '" + target.getAnomalyType() + "' нет состояния '" + newState + "' в JSON!"));
                                                         return 0;
                                                     }
 
-                                                    anomaly.setCurrentState(newState);
-                                                    source.sendSuccess(() -> Component.literal("§aСостояние аномалии (" + anomaly.getAnomalyType() + ") изменено на: §e" + newState.toUpperCase()), true);
+                                                    target.setCurrentState(newState);
+                                                    if (target instanceof net.void_.lightentity.api.ILightEntity le) {
+                                                        net.void_.lightentity.network.LightEntityTracker.syncEntity(le);
+                                                    }
+                                                    String aType = target.getAnomalyType();
+                                                    source.sendSuccess(() -> Component.literal("§aСостояние аномалии (" + aType + ") изменено на: §e" + newState.toUpperCase()), true);
                                                     return 1;
                                                 })
                                         )

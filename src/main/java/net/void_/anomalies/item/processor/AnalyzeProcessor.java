@@ -7,7 +7,6 @@ import net.minecraft.world.entity.player.Player;
 import net.void_.anomalies.anomaly.data.AnomalyDefinition;
 import net.void_.anomalies.anomaly.data.ZoneConfig;
 import net.void_.anomalies.anomaly.loader.AnomalyReloadListener;
-import net.void_.anomalies.core.AnomalyEntity;
 
 import java.util.Set;
 

@@ -1,21 +1,20 @@
 package net.void_.anomalies.components;
 
-import net.void_.anomalies.core.AnomalyEntity;
 import net.void_.anomalies.core.IAnomalyComponent;
+import net.void_.lightentity.api.ILightEntity;
 
 public class SnapToGridComponent implements IAnomalyComponent {
 
     private boolean isSnapped = false;
 
     @Override
-    public void serverTick(AnomalyEntity anomaly) {
-        // Выравниваем только один раз при спавне/загрузке, чтобы не дергать позицию постоянно
+    public void serverTick(ILightEntity entity) {
         if (!isSnapped) {
-            double x = Math.floor(anomaly.getX()) + 0.5D;
-            double y = Math.floor(anomaly.getY()); // Нижняя граница блока (или оставь anomaly.getY() по желанию)
-            double z = Math.floor(anomaly.getZ()) + 0.5D;
+            double x = Math.floor(entity.getX()) + 0.5D;
+            double y = Math.floor(entity.getY());
+            double z = Math.floor(entity.getZ());
 
-            anomaly.setPos(x, y, z);
+            entity.setPosition(x, y, z);
             isSnapped = true;
         }
     }

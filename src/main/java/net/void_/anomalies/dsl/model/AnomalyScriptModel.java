@@ -1,7 +1,7 @@
 package net.void_.anomalies.dsl.model;
 
 import net.void_.anomalies.api.behavior.IAnomalyStateBehavior;
-import net.void_.anomalies.core.AnomalyEntity;
+import net.void_.anomalies.core.IAnomalyHolder;
 import net.void_.anomalies.dsl.ast.ICondition;
 import net.void_.anomalies.dsl.cache.TransientZoneCache;
 import net.void_.anomalies.dsl.context.EvaluationContext;
@@ -57,7 +57,7 @@ public class AnomalyScriptModel implements IAnomalyStateBehavior {
     }
 
     @Override
-    public String onTick(AnomalyEntity anomaly, int ticksInState) {
+    public String onTick(IAnomalyHolder anomaly, int ticksInState) {
         String currentState = anomaly.getCurrentState();
         List<TransitionRule> rules = transitions.get(currentState);
 
@@ -65,7 +65,6 @@ public class AnomalyScriptModel implements IAnomalyStateBehavior {
             return null;
         }
 
-        // Подтягиваем кэшированные ивенты зон и автоматически очищаем сгоревшие фреймы
         Set<EvaluationContext.ZoneEvent> zoneEvents = TransientZoneCache.getSnapshotAndFlush(anomaly);
         EvaluationContext ctx = new EvaluationContext(anomaly, ticksInState, zoneEvents);
 

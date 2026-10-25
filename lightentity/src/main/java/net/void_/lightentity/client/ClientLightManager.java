@@ -32,7 +32,7 @@ public class ClientLightManager {
         return CLIENT_ENTITIES.get(id);
     }
 
-    public static void handleSpawn(UUID id, ResourceLocation typeId, Vec3 pos, float width, float height) {
+    public static void handleSpawn(UUID id, ResourceLocation typeId, Vec3 pos, float width, float height, CompoundTag initialData) {
         Level clientLevel = Minecraft.getInstance().level;
         if (clientLevel == null) return;
 
@@ -44,6 +44,9 @@ public class ClientLightManager {
 
         ILightEntity entity = type.create(id, clientLevel, pos);
         entity.setDimensions(width, height);
+        if (initialData != null && !initialData.isEmpty()) {
+            entity.deserializeNBT(initialData);
+        }
         CLIENT_ENTITIES.put(id, entity);
         CLIENT_GRID.add(entity);
     }

@@ -17,7 +17,6 @@ import net.void_.anomalies.anomaly.data.AnomalyRecipeDefinition;
 import net.void_.anomalies.anomaly.data.CraftingSession;
 import net.void_.anomalies.anomaly.data.ZoneConfig;
 import net.void_.anomalies.anomaly.loader.AnomalyReloadListener;
-import net.void_.anomalies.core.AnomalyEntity;
 import net.void_.anomalies.core.IAnomalyComponent;
 import net.void_.anomalies.dsl.model.AnomalyScriptModel;
 import net.void_.anomalies.dsl.registry.AnomalyScriptRegistry;
@@ -32,7 +31,9 @@ public class RecipeProcessorComponent implements IAnomalyComponent {
     private static final String NBT_KEY = "CraftingSessions";
 
     @Override
-    public void serverTick(AnomalyEntity anomaly) {
+    public void serverTick(net.void_.lightentity.api.ILightEntity entity) {
+        if (!(entity instanceof net.void_.anomalies.core.IAnomalyHolder anomaly)) return;
+
         String type = anomaly.getAnomalyType();
         String state = anomaly.getCurrentState();
 
@@ -55,7 +56,7 @@ public class RecipeProcessorComponent implements IAnomalyComponent {
                 ? anomaly.getBoundingBox().inflate(zone0.radius())
                 : anomaly.getBoundingBox().inflate(2.0, 2.0, 2.0);
 
-        List<ItemEntity> rawItems = anomaly.level().getEntitiesOfClass(ItemEntity.class, scanBox);
+        List<ItemEntity> rawItems = anomaly.getLevel().getEntitiesOfClass(ItemEntity.class, scanBox);
         Map<UUID, ItemEntity> itemMap = new HashMap<>();
 
         for (ItemEntity item : rawItems) {
@@ -63,7 +64,7 @@ public class RecipeProcessorComponent implements IAnomalyComponent {
 
             boolean inside = zone0 != null
                     ? zone0.contains(anomaly, item)
-                    : anomaly.position().closerThan(item.position(), 2.5);
+                    : anomaly.getPosition().closerThan(item.position(), 2.5);
 
             if (inside) {
                 itemMap.put(item.getUUID(), item);
@@ -93,7 +94,7 @@ public class RecipeProcessorComponent implements IAnomalyComponent {
                 sessionReserves.forEach((uuid, amount) ->
                         totalReservedPerItem.merge(uuid, amount, Integer::sum));
             } else {
-                if (anomaly.level() instanceof ServerLevel serverLevel) {
+                if (anomaly.getLevel() instanceof ServerLevel serverLevel) {
                     serverLevel.sendParticles(
                             ParticleTypes.SMOKE,
                             anomaly.getX(), anomaly.getY() + 0.5, anomaly.getZ(),
@@ -200,13 +201,13 @@ public class RecipeProcessorComponent implements IAnomalyComponent {
                 if (outputItem != Items.AIR) {
                     ItemStack resultStack = new ItemStack(outputItem, recipeDef.getOutput().getCount());
                     ItemEntity resultEntity = new ItemEntity(
-                            anomaly.level(),
+                            anomaly.getLevel(),
                             anomaly.getX(),
                             anomaly.getY() + 0.5,
                             anomaly.getZ(),
                             resultStack
                     );
-                    anomaly.level().addFreshEntity(resultEntity);
+                    anomaly.getLevel().addFreshEntity(resultEntity);
                 }
 
                 progressIterator.remove();
@@ -216,9 +217,9 @@ public class RecipeProcessorComponent implements IAnomalyComponent {
         writeSessionsToNBT(anomaly, sessions);
     }
 
-    private List<CraftingSession> readSessionsFromNBT(AnomalyEntity anomaly) {
+    private List<CraftingSession> readSessionsFromNBT(net.void_.anomalies.core.IAnomalyHolder anomaly) {
         List<CraftingSession> list = new ArrayList<>();
-        CompoundTag tag = anomaly.getPersistentData();
+        CompoundTag tag = anomaly.getCustomOverrides();
         if (tag.contains(NBT_KEY, Tag.TAG_LIST)) {
             ListTag tagList = tag.getList(NBT_KEY, Tag.TAG_COMPOUND);
             for (int i = 0; i < tagList.size(); i++) {
@@ -228,11 +229,11 @@ public class RecipeProcessorComponent implements IAnomalyComponent {
         return list;
     }
 
-    private void writeSessionsToNBT(AnomalyEntity anomaly, List<CraftingSession> sessions) {
+    private void writeSessionsToNBT(net.void_.anomalies.core.IAnomalyHolder anomaly, List<CraftingSession> sessions) {
         ListTag tagList = new ListTag();
         for (CraftingSession session : sessions) {
             tagList.add(session.serializeNBT());
         }
-        anomaly.getPersistentData().put(NBT_KEY, tagList);
+        anomaly.getCustomOverrides().put(NBT_KEY, tagList);
     }
 }

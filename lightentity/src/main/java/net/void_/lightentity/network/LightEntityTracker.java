@@ -47,7 +47,8 @@ public class LightEntityTracker {
                         id,
                         entity.getType().getId(),
                         entity.getX(), entity.getY(), entity.getZ(),
-                        entity.getWidth(), entity.getHeight()
+                        entity.getWidth(), entity.getHeight(),
+                        entity.serializeNBT()
                 );
                 LightNetwork.CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), pkt);
             }
@@ -63,6 +64,24 @@ public class LightEntityTracker {
                         PacketDistributor.PLAYER.with(() -> player),
                         new ClientboundDespawnLightEntityPacket(trackedId)
                 );
+            }
+        }
+    }
+
+    public static void syncEntity(ILightEntity entity) {
+        if (entity == null || entity.getLevel().isClientSide()) return;
+        UUID id = entity.getId();
+        net.void_.lightentity.network.packet.ClientboundSyncLightEntityPacket pkt =
+                new net.void_.lightentity.network.packet.ClientboundSyncLightEntityPacket(id, entity.serializeNBT());
+
+        if (entity.getLevel() instanceof ServerLevel serverLevel) {
+            for (Map.Entry<UUID, Set<UUID>> entry : PLAYER_TRACKED_ENTITIES.entrySet()) {
+                if (entry.getValue().contains(id)) {
+                    ServerPlayer player = serverLevel.getServer().getPlayerList().getPlayer(entry.getKey());
+                    if (player != null) {
+                        LightNetwork.CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), pkt);
+                    }
+                }
             }
         }
     }

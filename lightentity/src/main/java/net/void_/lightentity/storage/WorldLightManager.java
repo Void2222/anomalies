@@ -40,6 +40,10 @@ public class WorldLightManager {
         return spatialGrid;
     }
 
+    public ILightEntity getEntity(UUID id) {
+        return spatialGrid.getById(id);
+    }
+
     public void spawn(ILightEntity entity) {
         if (entity == null) return;
         ChunkPos cp = entity.getChunkPos();

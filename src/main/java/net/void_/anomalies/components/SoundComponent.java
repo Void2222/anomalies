@@ -2,9 +2,10 @@ package net.void_.anomalies.components;
 
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundSource;
+import net.minecraft.world.phys.Vec3;
 import net.void_.anomalies.anomaly.data.MinMaxRange;
-import net.void_.anomalies.core.AnomalyEntity;
 import net.void_.anomalies.core.IAnomalyComponent;
+import net.void_.lightentity.api.ILightEntity;
 
 public class SoundComponent implements IAnomalyComponent {
 
@@ -23,24 +24,19 @@ public class SoundComponent implements IAnomalyComponent {
         this.soundSource = soundSource;
         this.volume = volume;
         this.pitch = pitch;
-        // ⚡ Первое срабатывание запускаем сразу (0-й тик), чтобы звук фазы играл без задержки
         this.nextTriggerTick = 0;
     }
 
     @Override
-    public void serverTick(AnomalyEntity anomaly) {}
-
-    @Override
-    public void clientTick(AnomalyEntity anomaly) {
+    public void clientTick(ILightEntity entity) {
         clientTickCounter++;
         if (clientTickCounter >= nextTriggerTick) {
             clientTickCounter = 0;
-            // 🛡️ Защита от 0 тиков (микрофризы при некорректном конфиге)
             this.nextTriggerTick = Math.max(1, intervalRange.getInt());
 
-            var pos = anomaly.position();
+            Vec3 pos = entity.getPosition();
 
-            anomaly.level().playLocalSound(
+            entity.getLevel().playLocalSound(
                     pos.x, pos.y, pos.z,
                     soundEvent,
                     soundSource,
