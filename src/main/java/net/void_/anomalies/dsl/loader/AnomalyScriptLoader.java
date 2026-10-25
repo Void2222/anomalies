@@ -103,6 +103,27 @@ public class AnomalyScriptLoader implements PreparableReloadListener {
             AnomalyScriptRegistry.register(type, script);
             LOGGER.info("Successfully loaded anomaly DSL engine for '{}'", type);
         });
+
+        // ⚡ Глобальный хук: как только датапаки загружены/перезагружены (/reload),
+        // принудительно пересобираем компоненты у всех живых аномалий в мире!
+        net.minecraftforge.server.ServerLifecycleHooks.getCurrentServer();
+        var server = net.minecraftforge.server.ServerLifecycleHooks.getCurrentServer();
+        if (server != null) {
+            for (var level : server.getAllLevels()) {
+                var mgr = net.void_.lightentity.storage.WorldLightManager.get(level);
+                for (var entity : mgr.getSpatialGrid().getAll()) {
+                    if (entity instanceof net.void_.anomalies.core.IAnomalyHolder anomaly) {
+                        try {
+                            anomaly.rebuildComponents();
+                            net.void_.lightentity.network.LightEntityTracker.syncEntity(entity);
+                        } catch (Exception e) {
+                            LOGGER.error("Failed to reinitialize anomaly {} after datapack reload", anomaly.getUUID(), e);
+                        }
+                    }
+                }
+            }
+            LOGGER.info("Re-initialized all live world anomalies with reloaded datapack definitions.");
+        }
     }
 
     private void validateScriptBinds(String anomalyType, AnomalyScriptModel script) {
