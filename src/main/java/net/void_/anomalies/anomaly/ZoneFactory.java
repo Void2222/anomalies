@@ -33,12 +33,16 @@ import java.util.Optional;
 public class ZoneFactory {
 
     public static void applyComponents(AnomalyEntity anomaly, String type, String state) {
+        applyComponents((net.void_.anomalies.core.IAnomalyHolder) anomaly, type, state);
+    }
+
+    public static void applyComponents(net.void_.anomalies.core.IAnomalyHolder anomaly, String type, String state) {
         AnomalyDefinition definition = AnomalyReloadListener.get(type, state);
         if (definition == null) return;
 
         anomaly.addComponent(new SnapToGridComponent());
 
-        if (!anomaly.level().isClientSide) {
+        if (!anomaly.getLevel().isClientSide) {
             anomaly.addComponent(new StateMachineComponent(type));
 
             Optional<AnomalyScriptModel> script = AnomalyScriptRegistry.get(type);
@@ -59,13 +63,17 @@ public class ZoneFactory {
         applyComponents(anomaly, type, "idle");
     }
 
-    private static void setupDimensions(AnomalyEntity anomaly, SizeConfig sizeConfig, CompoundTag overrides) {
-        if (sizeConfig == null) return;
-        float[] dims = OverrideHelper.getDimensions(overrides, sizeConfig);
-        anomaly.setAnomalyDimensions(dims[0], dims[1]);
+    public static void applyComponents(net.void_.anomalies.core.IAnomalyHolder anomaly, String type) {
+        applyComponents(anomaly, type, "idle");
     }
 
-    private static void setupParticles(AnomalyEntity anomaly, List<ParticleConfig> particleConfigs, CompoundTag overrides) {
+    private static void setupDimensions(net.void_.anomalies.core.IAnomalyHolder anomaly, SizeConfig sizeConfig, CompoundTag overrides) {
+        if (sizeConfig == null) return;
+        float[] dims = OverrideHelper.getDimensions(overrides, sizeConfig);
+        anomaly.setDimensions(dims[0], dims[1]);
+    }
+
+    private static void setupParticles(net.void_.anomalies.core.IAnomalyHolder anomaly, List<ParticleConfig> particleConfigs, CompoundTag overrides) {
         if (particleConfigs == null || particleConfigs.isEmpty()) return;
 
         for (ParticleConfig pConfig : particleConfigs) {
@@ -90,7 +98,7 @@ public class ZoneFactory {
         }
     }
 
-    private static void setupSound(AnomalyEntity anomaly, SoundConfig soundConfig, CompoundTag overrides) {
+    private static void setupSound(net.void_.anomalies.core.IAnomalyHolder anomaly, SoundConfig soundConfig, CompoundTag overrides) {
         if (soundConfig == null) return;
 
         float volume = overrides.contains("soundVolume") ? (float) overrides.getDouble("soundVolume") : soundConfig.volume();
@@ -112,7 +120,7 @@ public class ZoneFactory {
         anomaly.addComponent(new SoundComponent(soundEvent, soundInterval, soundSource, volume, pitch));
     }
 
-    private static void setupTriggerAndPhysics(AnomalyEntity anomaly, AnomalyDefinition definition, CompoundTag overrides) {
+    private static void setupTriggerAndPhysics(net.void_.anomalies.core.IAnomalyHolder anomaly, AnomalyDefinition definition, CompoundTag overrides) {
         List<ZoneConfig> zones = OverrideHelper.getZones(overrides, definition.zones());
         PhysicsConfig generalPhysics = definition.physics();
         boolean ignoreAnomalies = Boolean.TRUE.equals(definition.ignoreOtherAnomalies());
@@ -128,7 +136,7 @@ public class ZoneFactory {
 
         MinMaxRange triggerInterval = new MinMaxRange(1, 1);
 
-        DamageSource defaultDamageSource = anomaly.level().damageSources().generic();
+        DamageSource defaultDamageSource = anomaly.getLevel().damageSources().generic();
         DamageComponent damageComp = new DamageComponent(new MinMaxRange(0, 0), defaultDamageSource);
         anomaly.addComponent(damageComp);
 
@@ -146,26 +154,35 @@ public class ZoneFactory {
         }
 
         anomaly.addComponent(new TriggerComponent(expandRadius, triggerInterval,
-                (anom, target) -> handleTriggerTarget(anom, target, impulseComp, damageComp, zones, ignoreAnomalies)));
+                (anom, target) -> handleTriggerTarget(anomaly, target, impulseComp, damageComp, zones, ignoreAnomalies)));
     }
 
-    private static void handleTriggerTarget(AnomalyEntity anomaly, Entity target, ImpulseComponent impulseComp, DamageComponent damageComp, List<ZoneConfig> zones, boolean ignoreAnomalies) {
+    private static void handleTriggerTarget(net.void_.anomalies.core.IAnomalyHolder anomaly, Entity target, ImpulseComponent impulseComp, DamageComponent damageComp, List<ZoneConfig> zones, boolean ignoreAnomalies) {
         if (ignoreAnomalies && target instanceof AnomalyEntity) return;
         if (target instanceof Player player && AnomalyIgnoreManager.isIgnored(player)) return;
 
         if (impulseComp != null) {
-            impulseComp.applyImpulse(anomaly, target);
+            if (anomaly instanceof AnomalyEntity ae) {
+                impulseComp.applyImpulse(ae, target);
+            }
         }
 
-        ZoneConfig activeZone = ZoneUtils.getActiveZone(zones, anomaly, target);
+        ZoneConfig activeZone = null;
+        if (anomaly instanceof AnomalyEntity ae) {
+            activeZone = ZoneUtils.getActiveZone(zones, ae, target);
+        }
         if (activeZone == null) return;
 
         if (target instanceof ItemEntity itemEntity) {
-            AnomalyItemInteractEvent itemEvent = new AnomalyItemInteractEvent(anomaly, itemEntity, anomaly.getAnomalyType());
-            MinecraftForge.EVENT_BUS.post(itemEvent);
+            if (anomaly instanceof AnomalyEntity ae) {
+                AnomalyItemInteractEvent itemEvent = new AnomalyItemInteractEvent(ae, itemEntity, anomaly.getAnomalyType());
+                MinecraftForge.EVENT_BUS.post(itemEvent);
+            }
         } else {
-            AnomalyTriggerEvent event = new AnomalyTriggerEvent(anomaly, target, anomaly.getAnomalyType());
-            if (MinecraftForge.EVENT_BUS.post(event)) return;
+            if (anomaly instanceof AnomalyEntity ae) {
+                AnomalyTriggerEvent event = new AnomalyTriggerEvent(ae, target, anomaly.getAnomalyType());
+                if (MinecraftForge.EVENT_BUS.post(event)) return;
+            }
 
             if (activeZone.damage() != null) {
                 DamageConfig dConfig = activeZone.damage();
@@ -179,18 +196,22 @@ public class ZoneFactory {
                     String dType = dConfig.damageType() != null ? dConfig.damageType().toLowerCase() : "generic";
                     DamageSource zoneDamageSource = getDamageSource(anomaly, dType);
 
-                    damageComp.inflictDamage(anomaly, target, activeZone, damageRange, zoneDamageSource);
+                    if (anomaly instanceof AnomalyEntity ae) {
+                        damageComp.inflictDamage(ae, target, activeZone, damageRange, zoneDamageSource);
+                    } else {
+                        target.hurt(zoneDamageSource, (float) damageRange.getDouble());
+                    }
                 }
             }
         }
     }
 
-    private static DamageSource getDamageSource(AnomalyEntity anomaly, String dType) {
+    private static DamageSource getDamageSource(net.void_.anomalies.core.IAnomalyHolder anomaly, String dType) {
         return switch (dType) {
-            case "fire" -> anomaly.level().damageSources().inFire();
-            case "lightning" -> anomaly.level().damageSources().lightningBolt();
-            case "magic" -> anomaly.level().damageSources().magic();
-            default -> anomaly.level().damageSources().generic();
+            case "fire" -> anomaly.getLevel().damageSources().inFire();
+            case "lightning" -> anomaly.getLevel().damageSources().lightningBolt();
+            case "magic" -> anomaly.getLevel().damageSources().magic();
+            default -> anomaly.getLevel().damageSources().generic();
         };
     }
 
@@ -200,6 +221,20 @@ public class ZoneFactory {
         AnomalyEntity anomaly = EntityInit.ANOMALY.get().create(level);
         if (anomaly != null) {
             anomaly.setPos(x, y, z);
+            anomaly.setAnomalyType(type.toLowerCase());
+        }
+        return anomaly;
+    }
+
+    public static net.void_.anomalies.core.LightAnomalyInstance createLight(Level level, double x, double y, double z, String type) {
+        if (!AnomalyReloadListener.exists(type)) return null;
+
+        net.void_.anomalies.core.LightAnomalyInstance anomaly = net.void_.anomalies.core.LightAnomalyInstance.TYPE.create(
+                java.util.UUID.randomUUID(),
+                level,
+                new net.minecraft.world.phys.Vec3(x, y, z)
+        );
+        if (anomaly != null) {
             anomaly.setAnomalyType(type.toLowerCase());
         }
         return anomaly;

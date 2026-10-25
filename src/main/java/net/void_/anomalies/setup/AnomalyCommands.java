@@ -131,6 +131,27 @@ public class AnomalyCommands {
                         )
                         .then(Commands.literal("light")
                                 .then(Commands.literal("spawn")
+                                        .then(Commands.argument("type", StringArgumentType.string())
+                                                .suggests((context, builder) -> {
+                                                    AnomalyReloadListener.getKeys().forEach(builder::suggest);
+                                                    return builder.buildFuture();
+                                                })
+                                                .executes(context -> {
+                                                    CommandSourceStack source = context.getSource();
+                                                    ServerLevel level = source.getLevel();
+                                                    var player = source.getPlayerOrException();
+                                                    String type = StringArgumentType.getString(context, "type");
+
+                                                    var inst = ZoneFactory.createLight(level, player.getX(), player.getY(), player.getZ(), type);
+                                                    if (inst != null) {
+                                                        net.void_.lightentity.storage.WorldLightManager.get(level).spawn(inst);
+                                                        source.sendSuccess(() -> Component.literal("§a[LightEntity] Дата-дривен аномалия '" + type + "' успешно создана!"), true);
+                                                    } else {
+                                                        source.sendFailure(Component.literal("§cТип '" + type + "' не найден в JSON!"));
+                                                    }
+                                                    return 1;
+                                                })
+                                        )
                                         .executes(context -> {
                                             CommandSourceStack source = context.getSource();
                                             ServerLevel level = source.getLevel();

@@ -1,22 +1,38 @@
 package net.void_.anomalies.core;
 
 import net.minecraft.nbt.CompoundTag;
+import net.void_.lightentity.api.ILightComponent;
+import net.void_.lightentity.api.ILightEntity;
 
-public interface IAnomalyComponent {
+public interface IAnomalyComponent extends ILightComponent {
 
-    /**
-     * Вызывается на сервере каждые 10 тиков (настраиваемый интервал из AnomalyEntity).
-     * Здесь пишем логику триггеров, урона и физики.
-     */
     default void serverTick(AnomalyEntity anomaly) {}
-
-    /**
-     * Вызывается на клиенте каждый тик.
-     * Здесь крутим партиклы и эмбиент-звуки.
-     */
     default void clientTick(AnomalyEntity anomaly) {}
 
     default void save(CompoundTag tag) {}
     default void load(CompoundTag tag) {}
 
+    @Override
+    default void serverTick(ILightEntity entity) {
+        if (entity instanceof AnomalyEntity ae) {
+            serverTick(ae);
+        }
+    }
+
+    @Override
+    default void clientTick(ILightEntity entity) {
+        if (entity instanceof AnomalyEntity ae) {
+            clientTick(ae);
+        }
+    }
+
+    @Override
+    default void writeToNbt(CompoundTag tag) {
+        save(tag);
+    }
+
+    @Override
+    default void readFromNbt(CompoundTag tag) {
+        load(tag);
+    }
 }

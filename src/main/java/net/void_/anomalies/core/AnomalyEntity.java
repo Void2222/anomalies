@@ -21,7 +21,7 @@ import net.void_.anomalies.components.StateMachineComponent;
 import java.util.ArrayList;
 import java.util.List;
 
-public class AnomalyEntity extends Entity {
+public class AnomalyEntity extends Entity implements IAnomalyHolder {
 
     private float anomalyWidth = 1.0F;
     private float anomalyHeight = 1.0F;
@@ -78,6 +78,48 @@ public class AnomalyEntity extends Entity {
         this.anomalyWidth = width;
         this.anomalyHeight = height;
         this.refreshDimensions();
+    }
+
+    @Override
+    public net.minecraft.core.BlockPos getBlockPos() {
+        return this.blockPosition();
+    }
+
+    @Override
+    public net.minecraft.world.level.Level getLevel() {
+        return this.level();
+    }
+
+    @Override
+    public float getWidth() {
+        return this.anomalyWidth;
+    }
+
+    @Override
+    public float getHeight() {
+        return this.anomalyHeight;
+    }
+
+    @Override
+    public void setDimensions(float width, float height) {
+        setAnomalyDimensions(width, height);
+    }
+
+    @Override
+    public net.minecraft.world.phys.Vec3 getPosition() {
+        return this.position();
+    }
+
+    @Override
+    public boolean isDiscarded() {
+        return this.isRemoved();
+    }
+
+    @Override
+    public <C extends net.void_.lightentity.api.ILightComponent> void addComponent(C component) {
+        if (component instanceof IAnomalyComponent ac) {
+            this.components.add(ac);
+        }
     }
 
     public CompoundTag getCustomOverrides() {
@@ -190,6 +232,17 @@ public class AnomalyEntity extends Entity {
     @Override
     public EntityDimensions getDimensions(Pose pose) {
         return EntityDimensions.scalable(this.anomalyWidth, this.anomalyHeight);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Override
+    public <C extends net.void_.lightentity.api.ILightComponent> java.util.Optional<C> getLightComponent(Class<C> componentClass) {
+        for (IAnomalyComponent component : this.components) {
+            if (componentClass.isInstance(component)) {
+                return java.util.Optional.of((C) component);
+            }
+        }
+        return java.util.Optional.empty();
     }
 
     @SuppressWarnings("unchecked")
