@@ -12,6 +12,14 @@ public class OrCondition implements ICondition {
         this.right = right;
     }
 
+    public ICondition getLeft() {
+        return left;
+    }
+
+    public ICondition getRight() {
+        return right;
+    }
+
     @Override
     public boolean test(EvaluationContext ctx) {
         return left.test(ctx) || right.test(ctx);

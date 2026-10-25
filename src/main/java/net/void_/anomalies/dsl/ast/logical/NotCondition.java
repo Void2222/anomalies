@@ -10,6 +10,10 @@ public class NotCondition implements ICondition {
         this.target = target;
     }
 
+    public ICondition getTarget() {
+        return target;
+    }
+
     @Override
     public boolean test(EvaluationContext ctx) {
         return !target.test(ctx);

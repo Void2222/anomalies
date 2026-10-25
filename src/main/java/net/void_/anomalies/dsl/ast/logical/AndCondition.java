@@ -12,6 +12,14 @@ public class AndCondition implements ICondition {
         this.right = right;
     }
 
+    public ICondition getLeft() {
+        return left;
+    }
+
+    public ICondition getRight() {
+        return right;
+    }
+
     @Override
     public boolean test(EvaluationContext ctx) {
         // Short-circuit evaluation: если лево false, право не вычисляем

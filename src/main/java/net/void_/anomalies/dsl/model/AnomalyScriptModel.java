@@ -56,6 +56,10 @@ public class AnomalyScriptModel implements IAnomalyStateBehavior {
         return stateRecipes;
     }
 
+    public Map<String, List<TransitionRule>> getTransitions() {
+        return transitions;
+    }
+
     @Override
     public String onTick(IAnomalyHolder anomaly, int ticksInState) {
         String currentState = anomaly.getCurrentState();

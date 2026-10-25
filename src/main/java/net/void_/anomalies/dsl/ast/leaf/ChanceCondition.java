@@ -12,6 +12,10 @@ public class ChanceCondition implements ICondition {
         this.chance = chance;
     }
 
+    public double getChance() {
+        return chance;
+    }
+
     @Override
     public boolean test(EvaluationContext ctx) {
         if (chance >= 1.0) return true;
