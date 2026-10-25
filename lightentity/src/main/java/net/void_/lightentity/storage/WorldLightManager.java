@@ -65,17 +65,20 @@ public class WorldLightManager {
 
     public void onChunkLoad(LevelChunk chunk) {
         ChunkPos cp = chunk.getPos();
-        // Storage is populated from ChunkDataEvent if saved
         ChunkLightStorage storage = chunkStorages.computeIfAbsent(cp.toLong(), k -> new ChunkLightStorage(cp));
         for (ILightEntity entity : storage.getEntities()) {
-            spatialGrid.add(entity);
+            if (!entity.isDiscarded()) {
+                spatialGrid.add(entity);
+            }
         }
     }
 
     public void onChunkUnload(LevelChunk chunk) {
         ChunkPos cp = chunk.getPos();
-        ChunkLightStorage storage = chunkStorages.remove(cp.toLong());
+        ChunkLightStorage storage = chunkStorages.get(cp.toLong());
         if (storage != null) {
+            // Удаляем сущности только из активной пространственной сетки,
+            // но сохраняем storage в памяти до вызова ChunkDataEvent.Save!
             for (ILightEntity entity : storage.getEntities()) {
                 spatialGrid.remove(entity);
             }
@@ -85,8 +88,14 @@ public class WorldLightManager {
     public void onChunkSave(LevelChunk chunk, CompoundTag chunkTag) {
         ChunkPos cp = chunk.getPos();
         ChunkLightStorage storage = chunkStorages.get(cp.toLong());
-        if (storage != null && !storage.isEmpty()) {
-            chunkTag.put(ChunkLightStorage.NBT_TAG_ROOT, storage.writeToNBT());
+        if (storage != null) {
+            if (!storage.isEmpty()) {
+                chunkTag.put(ChunkLightStorage.NBT_TAG_ROOT, storage.writeToNBT());
+            }
+            // Если чанк уже выгружен из мира, теперь можно безопасно очистить storage
+            if (!level.hasChunk(cp.x, cp.z)) {
+                chunkStorages.remove(cp.toLong());
+            }
         }
     }
 

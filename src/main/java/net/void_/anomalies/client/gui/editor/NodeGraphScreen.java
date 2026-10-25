@@ -36,6 +36,10 @@ public class NodeGraphScreen extends Screen {
     private EditorStateNode selectedNode = null;
     private EditorStateNode hoveredNode = null;
 
+    // Интерактивное протягивание провода связи
+    private EditorStateNode connectingSourceNode = null;
+    private int connectingPortIndex = -1;
+
     // Кнопка сохранения
     private Button saveButton;
 
@@ -114,24 +118,70 @@ public class NodeGraphScreen extends Screen {
         ));
     }
 
+    // Кастомные плоские кнопки тулбара (в темном стиле студии)
+    private static class ToolbarButton {
+        final String text;
+        final Runnable action;
+        int x, y, width, height;
+        boolean hovered;
+
+        ToolbarButton(String text, Runnable action) {
+            this.text = text;
+            this.action = action;
+            this.width = 75;
+            this.height = 20;
+        }
+
+        void render(GuiGraphics gui, net.minecraft.client.gui.Font font, int mouseX, int mouseY) {
+            this.hovered = mouseX >= x && mouseX <= x + width && mouseY >= y && mouseY <= y + height;
+            int bg = hovered ? 0xFF2D333F : 0xFF1E222B;
+            int border = hovered ? 0xFF58A6FF : 0xFF353B47;
+            gui.fill(x, y, x + width, y + height, bg);
+            gui.renderOutline(x, y, width, height, border);
+            int textWidth = font.width(text);
+            int textX = x + (width - textWidth) / 2;
+            int textY = y + (height - 8) / 2;
+            gui.drawString(font, text, textX, textY, hovered ? 0xFFFFFFFF : 0xC0C8D4, false);
+        }
+
+        boolean onClick(double mouseX, double mouseY) {
+            if (mouseX >= x && mouseX <= x + width && mouseY >= y && mouseY <= y + height) {
+                action.run();
+                return true;
+            }
+            return false;
+        }
+    }
+
+    private final java.util.List<ToolbarButton> toolbarButtons = new java.util.ArrayList<>();
+
     @Override
     protected void init() {
         super.init();
+        this.clearWidgets();
+        this.toolbarButtons.clear();
 
-        // Верхняя панель управления (Toolbar)
-        this.saveButton = this.addRenderableWidget(Button.builder(Component.literal("💾 Сохранить"), b -> {
-            onSaveRequested();
-        }).bounds(this.width - 110, 10, 100, 20).build());
-
-        this.addRenderableWidget(Button.builder(Component.literal("⟲ Сброс вида"), b -> {
+        // Добавляем кастомные компактные кнопки
+        this.toolbarButtons.add(new ToolbarButton("💾 Сохранить", this::onSaveRequested));
+        this.toolbarButtons.add(new ToolbarButton("⟲ Сброс", () -> {
             graph.setPanX(100.0f);
             graph.setPanY(100.0f);
             graph.setZoom(1.0f);
-        }).bounds(this.width - 220, 10, 100, 20).build());
+        }));
+        this.toolbarButtons.add(new ToolbarButton("✦ Авто", graph::autoLayout));
 
-        this.addRenderableWidget(Button.builder(Component.literal("✦ Авто-сетка"), b -> {
-            graph.autoLayout();
-        }).bounds(this.width - 330, 10, 100, 20).build());
+        layoutToolbar();
+    }
+
+    private void layoutToolbar() {
+        int rightMargin = 8;
+        int curX = this.width - rightMargin;
+        for (ToolbarButton btn : toolbarButtons) {
+            curX -= btn.width;
+            btn.x = curX;
+            btn.y = 8;
+            curX -= 6; // отступ между кнопками
+        }
     }
 
     public void onSaveRequested() {
@@ -170,6 +220,8 @@ public class NodeGraphScreen extends Screen {
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
         // 1. Темный базовый фон студии (IDE background)
         guiGraphics.fill(0, 0, this.width, this.height, 0xFF14161C);
+        // Принудительно сбрасываем буфер GuiGraphics, чтобы фоновый прямоугольник отрисовался ДО сырого Tesselator!
+        guiGraphics.flush();
 
         // 2. Отрисовка фоновой процедурной сетки
         PoseStack poseStack = guiGraphics.pose();
@@ -196,6 +248,12 @@ public class NodeGraphScreen extends Screen {
         // Сначала отрисовываем связи Безье (под карточками)
         NodeCardRenderer.renderTransitions(guiGraphics, graph, hoveredNode);
 
+        // Тянущийся провод при соединении портов
+        renderConnectingWire(guiGraphics, canvasMouseX, canvasMouseY);
+
+        // Сбрасываем сырой рендер перед рендером карточек через GuiGraphics
+        guiGraphics.flush();
+
         // Затем отрисовываем сами карточки состояний
         for (EditorStateNode node : graph.getNodes()) {
             boolean isSelected = (node == selectedNode);
@@ -204,44 +262,83 @@ public class NodeGraphScreen extends Screen {
         }
 
         poseStack.popPose();
+        guiGraphics.flush();
 
-        // 5. Отрисовка статус-бара и тулбара поверх холста
-        renderOverlayHeader(guiGraphics);
-
-        // Отрисовка стандартных кнопок экрана
-        super.render(guiGraphics, mouseX, mouseY, partialTick);
+        // 5. Отрисовка адаптивного статус-бара и плоских кнопок поверх холста
+        renderOverlayHeader(guiGraphics, mouseX, mouseY);
     }
 
-    private void renderOverlayHeader(GuiGraphics guiGraphics) {
+    private void renderOverlayHeader(GuiGraphics guiGraphics, int mouseX, int mouseY) {
         // Плашка верхней панели
         guiGraphics.fill(0, 0, this.width, 36, 0xD0181A22);
         guiGraphics.renderOutline(0, 36, this.width, 1, 0xFF2A2D37);
 
-        // Заголовок и режим
-        guiGraphics.drawString(this.font, this.title, 14, 12, 0xFFFFFF, false);
+        // Вычисляем свободное место для текста до кнопок
+        int leftmostButtonX = toolbarButtons.isEmpty() ? this.width : toolbarButtons.get(toolbarButtons.size() - 1).x;
+        int maxTextRight = leftmostButtonX - 10;
 
-        // Индикатор изменений
-        if (graph.isDirty()) {
-            guiGraphics.drawString(this.font, "● Несохраненные изменения", 140, 12, 0xFF58A6FF, false);
-        } else {
-            guiGraphics.drawString(this.font, "✓ Синхронизировано", 140, 12, 0xFF3FB950, false);
+        // Заголовок (с обрезкой если не влезает)
+        String titleStr = this.font.plainSubstrByWidth(this.title.getString(), Math.max(60, maxTextRight - 150));
+        guiGraphics.drawString(this.font, titleStr, 12, 14, 0xFFFFFF, false);
+
+        int titleWidth = this.font.width(titleStr);
+        int statusX = 18 + titleWidth;
+
+        // Индикатор изменений только если для него есть место
+        if (statusX + 110 < maxTextRight) {
+            if (graph.isDirty()) {
+                guiGraphics.drawString(this.font, "● Не сохранено", statusX, 14, 0xFF58A6FF, false);
+            } else {
+                guiGraphics.drawString(this.font, "✓ Синхронизировано", statusX, 14, 0xFF3FB950, false);
+            }
         }
 
-        // Зум-индикатор
-        String zoomText = String.format("Zoom: %.0f%%", graph.getZoom() * 100);
-        guiGraphics.drawString(this.font, zoomText, this.width - 410, 14, 0x8B949E, false);
+        // Отрисовка кастомных кнопок
+        for (ToolbarButton btn : toolbarButtons) {
+            btn.render(guiGraphics, this.font, mouseX, mouseY);
+        }
+    }
+
+    private void renderConnectingWire(GuiGraphics guiGraphics, float mouseCanvasX, float mouseCanvasY) {
+        if (connectingSourceNode != null && connectingPortIndex >= 0) {
+            float x1 = connectingSourceNode.getOutputPortX(connectingPortIndex);
+            float y1 = connectingSourceNode.getOutputPortY(connectingPortIndex);
+            CanvasRenderUtils.renderBezierCurve(guiGraphics.pose(), x1, y1, mouseCanvasX, mouseCanvasY, 0xFFFFAA00, 0xFF58A6FF, 3.0f);
+        }
     }
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (mouseY <= 36) {
-            return super.mouseClicked(mouseX, mouseY, button);
+            if (button == 0) {
+                for (ToolbarButton btn : toolbarButtons) {
+                    if (btn.onClick(mouseX, mouseY)) {
+                        return true;
+                    }
+                }
+            }
+            return true;
         }
 
         float canvasMouseX = (float) ((mouseX - graph.getPanX()) / graph.getZoom());
         float canvasMouseY = (float) ((mouseY - graph.getPanY()) / graph.getZoom());
 
-        if (button == 0) { // ЛКМ: клик по ноде или перетаскивание
+        if (button == 0) { // ЛКМ
+            // 1. Проверяем клик по выходному порту (оранжевый кружок справа) для протягивания провода
+            for (EditorStateNode node : graph.getNodes()) {
+                var transitions = node.getOutgoingTransitions();
+                for (int i = 0; i < transitions.size(); i++) {
+                    float px = node.getOutputPortX(i);
+                    float py = node.getOutputPortY(i);
+                    if (Math.abs(canvasMouseX - px) <= 8 && Math.abs(canvasMouseY - py) <= 8) {
+                        this.connectingSourceNode = node;
+                        this.connectingPortIndex = i;
+                        return true;
+                    }
+                }
+            }
+
+            // 2. Клик по самой ноде для выделения и перетаскивания
             for (EditorStateNode node : graph.getNodes()) {
                 if (node.contains(canvasMouseX, canvasMouseY)) {
                     this.selectedNode = node;
@@ -267,6 +364,34 @@ public class NodeGraphScreen extends Screen {
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
         if (button == 0) {
             this.draggedNode = null;
+
+            // Если тянули провод связи и отпустили
+            if (connectingSourceNode != null) {
+                float canvasMouseX = (float) ((mouseX - graph.getPanX()) / graph.getZoom());
+                float canvasMouseY = (float) ((mouseY - graph.getPanY()) / graph.getZoom());
+
+                // Ищем целевую ноду, над которой отпустили мышь (над входным портом или телом ноды)
+                for (EditorStateNode targetNode : graph.getNodes()) {
+                    if (targetNode != connectingSourceNode) {
+                        float inX = targetNode.getInputPortX();
+                        float inY = targetNode.getInputPortY();
+                        boolean hitPort = Math.abs(canvasMouseX - inX) <= 12 && Math.abs(canvasMouseY - inY) <= 12;
+                        boolean hitNode = targetNode.contains(canvasMouseX, canvasMouseY);
+
+                        if (hitPort || hitNode) {
+                            // Перенаправляем или соединяем переход
+                            var transitions = connectingSourceNode.getOutgoingTransitions();
+                            if (connectingPortIndex >= 0 && connectingPortIndex < transitions.size()) {
+                                transitions.get(connectingPortIndex).setTargetState(targetNode.getStateName());
+                            }
+                            graph.setDirty(true);
+                            break;
+                        }
+                    }
+                }
+                this.connectingSourceNode = null;
+                this.connectingPortIndex = -1;
+            }
         }
         if (button == 2 || button == 0) {
             this.isPanning = false;

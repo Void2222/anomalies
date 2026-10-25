@@ -24,6 +24,7 @@ public final class CanvasRenderUtils {
 
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
+        RenderSystem.disableDepthTest();
         RenderSystem.setShader(GameRenderer::getPositionColorShader);
 
         Tesselator tesselator = Tesselator.getInstance();
@@ -46,6 +47,7 @@ public final class CanvasRenderUtils {
         }
 
         tesselator.end();
+        RenderSystem.enableDepthTest();
         RenderSystem.disableBlend();
     }
 
@@ -82,6 +84,7 @@ public final class CanvasRenderUtils {
 
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
+        RenderSystem.disableDepthTest();
         RenderSystem.setShader(GameRenderer::getPositionColorShader);
 
         Tesselator tesselator = Tesselator.getInstance();
@@ -135,6 +138,7 @@ public final class CanvasRenderUtils {
         }
 
         tesselator.end();
+        RenderSystem.enableDepthTest();
         RenderSystem.disableBlend();
     }
 }

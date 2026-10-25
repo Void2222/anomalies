@@ -33,6 +33,10 @@ public class ZoneFactory {
 
     public static void applyComponents(IAnomalyHolder anomaly, String type, String state) {
         AnomalyDefinition definition = AnomalyReloadListener.get(type, state);
+        if (definition == null && state != null && !state.equalsIgnoreCase("idle")) {
+            // Fallback: если точный стейт не найден, пробуем взять idle
+            definition = AnomalyReloadListener.get(type, "idle");
+        }
         if (definition == null) return;
 
         anomaly.addComponent(new SnapToGridComponent());
