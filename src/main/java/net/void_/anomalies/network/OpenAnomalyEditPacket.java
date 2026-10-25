@@ -12,20 +12,32 @@ import java.util.function.Supplier;
 public class OpenAnomalyEditPacket {
     private final UUID anomalyId;
     private final CompoundTag overrides;
+    private final String anomalyType;
+    private final boolean isGraphMode;
 
-    public OpenAnomalyEditPacket(UUID anomalyId, CompoundTag overrides) {
+    public OpenAnomalyEditPacket(UUID anomalyId, CompoundTag overrides, String anomalyType, boolean isGraphMode) {
         this.anomalyId = anomalyId;
         this.overrides = overrides;
+        this.anomalyType = anomalyType != null ? anomalyType : "";
+        this.isGraphMode = isGraphMode;
+    }
+
+    public OpenAnomalyEditPacket(UUID anomalyId, CompoundTag overrides) {
+        this(anomalyId, overrides, "", false);
     }
 
     public OpenAnomalyEditPacket(FriendlyByteBuf buf) {
         this.anomalyId = buf.readUUID();
         this.overrides = buf.readNbt();
+        this.anomalyType = buf.readUtf();
+        this.isGraphMode = buf.readBoolean();
     }
 
     public void encode(FriendlyByteBuf buf) {
         buf.writeUUID(this.anomalyId);
         buf.writeNbt(this.overrides);
+        buf.writeUtf(this.anomalyType);
+        buf.writeBoolean(this.isGraphMode);
     }
 
     public static void handle(OpenAnomalyEditPacket packet, Supplier<NetworkEvent.Context> contextSupplier) {
@@ -33,7 +45,15 @@ public class OpenAnomalyEditPacket {
         context.enqueueWork(() -> {
             Minecraft mc = Minecraft.getInstance();
             if (mc.level != null) {
-                mc.setScreen(new AnomalyEditScreen(packet.anomalyId, packet.overrides));
+                if (packet.isGraphMode) {
+                    net.void_.anomalies.client.gui.editor.NodeGraphScreen.openLiveInspector(
+                            packet.anomalyId,
+                            packet.anomalyType,
+                            packet.overrides
+                    );
+                } else {
+                    mc.setScreen(new AnomalyEditScreen(packet.anomalyId, packet.overrides));
+                }
             }
         });
         context.setPacketHandled(true);

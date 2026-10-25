@@ -66,6 +66,13 @@ public class AnomalyMultitoolItem extends Item {
             return InteractionResultHolder.sidedSuccess(stack, level.isClientSide());
         }
 
+        if (getMode(stack) == MultitoolMode.INSPECTOR && !player.isShiftKeyDown()) {
+            if (level.isClientSide) {
+                net.void_.anomalies.client.gui.editor.NodeGraphScreen.openTemplateStudio();
+            }
+            return InteractionResultHolder.sidedSuccess(stack, level.isClientSide);
+        }
+
         return InteractionResultHolder.pass(stack);
     }
 

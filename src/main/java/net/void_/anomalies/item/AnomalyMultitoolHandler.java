@@ -51,9 +51,15 @@ public class AnomalyMultitoolHandler {
                     } else {
                         AnomalyNetwork.CHANNEL.send(
                                 PacketDistributor.PLAYER.with(() -> (ServerPlayer) player),
-                                new OpenAnomalyEditPacket(anomaly.getUUID(), anomaly.getCustomOverrides())
+                                new OpenAnomalyEditPacket(anomaly.getUUID(), anomaly.getCustomOverrides(), anomaly.getAnomalyType(), false)
                         );
                     }
+                }
+                case INSPECTOR -> {
+                    AnomalyNetwork.CHANNEL.send(
+                            PacketDistributor.PLAYER.with(() -> (ServerPlayer) player),
+                            new OpenAnomalyEditPacket(anomaly.getUUID(), anomaly.getCustomOverrides(), anomaly.getAnomalyType(), true)
+                    );
                 }
                 case RELOCATE -> RelocateProcessor.onInteract(player, stack, anomaly, player.isShiftKeyDown());
                 case DELETE -> {

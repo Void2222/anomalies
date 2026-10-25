@@ -4,6 +4,7 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.void_.anomalies.client.gui.editor.canvas.CanvasRenderUtils;
 import net.void_.anomalies.client.gui.editor.canvas.NodeCardRenderer;
@@ -38,10 +39,79 @@ public class NodeGraphScreen extends Screen {
     // Кнопка сохранения
     private Button saveButton;
 
-    public NodeGraphScreen(Component title, UUID targetAnomalyId, EditorGraphModel graph) {
+    private final CompoundTag initialOverrides;
+
+    public NodeGraphScreen(Component title, UUID targetAnomalyId, EditorGraphModel graph, CompoundTag initialOverrides) {
         super(title);
         this.targetAnomalyId = targetAnomalyId;
         this.graph = graph != null ? graph : new EditorGraphModel();
+        this.initialOverrides = initialOverrides != null ? initialOverrides.copy() : new CompoundTag();
+    }
+
+    public static void openLiveInspector(UUID anomalyId, String anomalyType, CompoundTag overrides) {
+        net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
+        var scriptOpt = net.void_.anomalies.dsl.registry.AnomalyScriptRegistry.get(anomalyType);
+
+        EditorGraphModel graph;
+        if (scriptOpt.isPresent()) {
+            graph = net.void_.anomalies.client.gui.editor.converter.GraphModelConverter.fromScriptModel(scriptOpt.get(), null);
+        } else {
+            graph = new EditorGraphModel();
+            EditorStateNode defaultNode = new EditorStateNode("idle", 150, 150);
+            defaultNode.setInitial(true);
+            graph.addNode(defaultNode);
+        }
+
+        // Подсвечиваем активный стейт живой сущности в мире
+        if (mc.level != null) {
+            net.void_.lightentity.storage.WorldLightManager mgr = net.void_.lightentity.storage.WorldLightManager.get(mc.level);
+            net.void_.lightentity.api.ILightEntity le = mgr.getEntity(anomalyId);
+            if (le instanceof net.void_.anomalies.core.IAnomalyHolder anomaly) {
+                EditorStateNode activeNode = graph.getNode(anomaly.getCurrentState());
+                if (activeNode != null) {
+                    activeNode.setCurrentlyActive(true);
+                }
+            }
+        }
+
+        mc.setScreen(new NodeGraphScreen(
+                Component.literal("Редактор аномалии [" + anomalyType + "]"),
+                anomalyId,
+                graph,
+                overrides
+        ));
+    }
+
+    public static void openTemplateStudio() {
+        net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
+        EditorGraphModel graph = new EditorGraphModel();
+
+        // Базовый шаблон стейтов
+        EditorStateNode idle = new EditorStateNode("idle", 100, 120);
+        idle.setInitial(true);
+        idle.addTransition(new net.void_.anomalies.client.gui.editor.model.EditorTransition("idle", "warmup", "player.in_zone(0)"));
+
+        EditorStateNode warmup = new EditorStateNode("warmup", 360, 120);
+        warmup.addTransition(new net.void_.anomalies.client.gui.editor.model.EditorTransition("warmup", "burst", "timer(20)"));
+
+        EditorStateNode burst = new EditorStateNode("burst", 620, 120);
+        burst.addTransition(new net.void_.anomalies.client.gui.editor.model.EditorTransition("burst", "cooldown", "timer(40)"));
+
+        EditorStateNode cooldown = new EditorStateNode("cooldown", 880, 120);
+        cooldown.addTransition(new net.void_.anomalies.client.gui.editor.model.EditorTransition("cooldown", "idle", "timer(60)"));
+
+        graph.addNode(idle);
+        graph.addNode(warmup);
+        graph.addNode(burst);
+        graph.addNode(cooldown);
+        graph.markAllClean();
+
+        mc.setScreen(new NodeGraphScreen(
+                Component.literal("Студия шаблонов аномалий (Datapack Studio)"),
+                null,
+                graph,
+                new CompoundTag()
+        ));
     }
 
     @Override
@@ -65,7 +135,34 @@ public class NodeGraphScreen extends Screen {
     }
 
     public void onSaveRequested() {
-        // Будет вызываться в Фазе 4 для отправки пакета или записи на диск
+        if (targetAnomalyId != null) {
+            // Live Inspector: сохранение в инстанс в мире через единый пакет
+            net.void_.anomalies.network.AnomalyNetwork.CHANNEL.sendToServer(
+                    new net.void_.anomalies.network.SyncAnomalyOverridesPacket(targetAnomalyId, initialOverrides)
+            );
+            if (this.minecraft != null && this.minecraft.player != null) {
+                this.minecraft.player.sendSystemMessage(Component.literal("§a[Студия] §fИзменения аномалии сохранены на сервер!"));
+            }
+        } else {
+            // Template Studio: экспорт в файл .anom и метаданные .editor.json
+            try {
+                java.nio.file.Path dir = java.nio.file.Paths.get("anomalies_export");
+                java.nio.file.Files.createDirectories(dir);
+                String dsl = net.void_.anomalies.client.gui.editor.converter.GraphModelConverter.toDslText(graph);
+                String meta = graph.toJsonMeta();
+
+                java.nio.file.Files.writeString(dir.resolve("custom_anomaly.anom"), dsl);
+                java.nio.file.Files.writeString(dir.resolve("custom_anomaly.editor.json"), meta);
+
+                if (this.minecraft != null && this.minecraft.player != null) {
+                    this.minecraft.player.sendSystemMessage(Component.literal("§a[Студия] §fШаблон экспортирован в папку anomalies_export/!"));
+                }
+            } catch (Exception e) {
+                if (this.minecraft != null && this.minecraft.player != null) {
+                    this.minecraft.player.sendSystemMessage(Component.literal("§c[Студия] Ошибка сохранения: " + e.getMessage()));
+                }
+            }
+        }
         graph.markAllClean();
     }
 
