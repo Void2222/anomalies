@@ -137,60 +137,6 @@ public class AnomalyCommands {
                                         )
                                 )
                         )
-                        .then(Commands.literal("light")
-                                .then(Commands.literal("spawn")
-                                        .then(Commands.argument("type", StringArgumentType.string())
-                                                .suggests((context, builder) -> {
-                                                    AnomalyReloadListener.getKeys().forEach(builder::suggest);
-                                                    return builder.buildFuture();
-                                                })
-                                                .executes(context -> {
-                                                    CommandSourceStack source = context.getSource();
-                                                    ServerLevel level = source.getLevel();
-                                                    var player = source.getPlayerOrException();
-                                                    String type = StringArgumentType.getString(context, "type");
-
-                                                    var inst = ZoneFactory.createLight(level, player.getX(), player.getY(), player.getZ(), type);
-                                                    if (inst != null) {
-                                                        net.void_.lightentity.storage.WorldLightManager.get(level).spawn(inst);
-                                                        source.sendSuccess(() -> Component.literal("§a[LightEntity] Дата-дривен аномалия '" + type + "' успешно создана!"), true);
-                                                    } else {
-                                                        source.sendFailure(Component.literal("§cТип '" + type + "' не найден в JSON!"));
-                                                    }
-                                                    return 1;
-                                                })
-                                        )
-                                        .executes(context -> {
-                                            CommandSourceStack source = context.getSource();
-                                            ServerLevel level = source.getLevel();
-                                            var player = source.getPlayerOrException();
-
-                                            var inst = net.void_.anomalies.test.TestLightAnomaly.TYPE.create(
-                                                    java.util.UUID.randomUUID(),
-                                                    level,
-                                                    player.position()
-                                            );
-                                            net.void_.lightentity.storage.WorldLightManager.get(level).spawn(inst);
-                                            source.sendSuccess(() -> Component.literal("§a[LightEntity] Спавн тестового легковесного юнита на позиции игрока!"), true);
-                                            return 1;
-                                        })
-                                )
-                                .then(Commands.literal("clear")
-                                        .executes(context -> {
-                                            CommandSourceStack source = context.getSource();
-                                            ServerLevel level = source.getLevel();
-                                            var player = source.getPlayerOrException();
-                                            var mgr = net.void_.lightentity.storage.WorldLightManager.get(level);
-                                            var nearby = mgr.getSpatialGrid().queryRadius(player.getX(), player.getY(), player.getZ(), 32.0, null);
-                                            int count = nearby.size();
-                                            for (var e : nearby) {
-                                                mgr.remove(e);
-                                            }
-                                            source.sendSuccess(() -> Component.literal("§e[LightEntity] Удалено " + count + " легковесных юнитов в радиусе 32 блоков!"), true);
-                                            return count;
-                                        })
-                                )
-                        )
         );
     }
 }
