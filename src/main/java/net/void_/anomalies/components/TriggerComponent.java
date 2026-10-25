@@ -7,8 +7,9 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.AABB;
 import net.void_.anomalies.anomaly.data.MinMaxRange;
 import net.void_.anomalies.config.AnomalyIgnoreManager;
-import net.void_.anomalies.core.AnomalyEntity;
 import net.void_.anomalies.core.IAnomalyComponent;
+import net.void_.anomalies.core.IAnomalyHolder;
+import net.void_.lightentity.api.ILightEntity;
 
 import java.util.List;
 import java.util.function.BiConsumer;
@@ -17,14 +18,13 @@ public class TriggerComponent implements IAnomalyComponent {
 
     private final double expandRadius;
     private final MinMaxRange interval;
-    private final BiConsumer<AnomalyEntity, Entity> onTrigger;
+    private final BiConsumer<IAnomalyHolder, Entity> onTrigger;
     private int timer = 0;
     private int currentIntervalTicks;
 
-    // 🌟 Радиус активации (в блоках). Если ближе нет игрока — аномалия "спит"
     private static final double ACTIVATION_DISTANCE = 48.0D;
 
-    public TriggerComponent(double expandRadius, MinMaxRange interval, BiConsumer<AnomalyEntity, Entity> onTrigger) {
+    public TriggerComponent(double expandRadius, MinMaxRange interval, BiConsumer<IAnomalyHolder, Entity> onTrigger) {
         this.expandRadius = expandRadius;
         this.interval = interval;
         this.onTrigger = onTrigger;
@@ -32,15 +32,16 @@ public class TriggerComponent implements IAnomalyComponent {
     }
 
     @Override
-    public void serverTick(AnomalyEntity anomaly) {
-        // 🛑 LOD-ОПТИМИЗАЦИЯ СЕРВЕРА: Проверяем, есть ли рядом игроки
-        Player nearestPlayer = anomaly.level().getNearestPlayer(
+    public void serverTick(ILightEntity entity) {
+        if (!(entity instanceof IAnomalyHolder anomaly)) return;
+
+        Player nearestPlayer = anomaly.getLevel().getNearestPlayer(
                 anomaly.getX(), anomaly.getY(), anomaly.getZ(),
                 ACTIVATION_DISTANCE, false
         );
 
         if (nearestPlayer == null) {
-            return; // Рядом никого нет — пропускаем тик, экономим процессор
+            return;
         }
 
         timer++;
@@ -50,15 +51,14 @@ public class TriggerComponent implements IAnomalyComponent {
 
             AABB area = anomaly.getBoundingBox().inflate(expandRadius);
 
-            List<Entity> targets = anomaly.level().getEntitiesOfClass(
+            List<Entity> targets = anomaly.getLevel().getEntitiesOfClass(
                     Entity.class,
                     area,
-                    entity -> {
-                        // 🛑 Игнорируем игроков из конфигурации ignore-менеджера
-                        if (entity instanceof Player player && AnomalyIgnoreManager.isIgnored(player)) {
+                    e -> {
+                        if (e instanceof Player player && AnomalyIgnoreManager.isIgnored(player)) {
                             return false;
                         }
-                        return (entity instanceof LivingEntity || entity instanceof ItemEntity);
+                        return e instanceof LivingEntity || e instanceof ItemEntity;
                     }
             );
 

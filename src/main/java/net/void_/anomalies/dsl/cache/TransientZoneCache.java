@@ -5,7 +5,7 @@ import net.void_.anomalies.api.event.AnomalyZoneTransitionEvent;
 import net.void_.anomalies.anomaly.data.AnomalyDefinition;
 import net.void_.anomalies.anomaly.data.ZoneConfig;
 import net.void_.anomalies.anomaly.loader.AnomalyReloadListener;
-import net.void_.anomalies.core.AnomalyEntity;
+import net.void_.anomalies.core.IAnomalyHolder;
 import net.void_.anomalies.dsl.context.EvaluationContext.ZoneEvent;
 import net.void_.anomalies.dsl.context.EvaluationContext.ZoneEventType;
 
@@ -26,7 +26,7 @@ public class TransientZoneCache {
             return;
         }
 
-        AnomalyEntity anomaly = event.getAnomaly();
+        IAnomalyHolder anomaly = event.getAnomaly();
         if (anomaly == null) return;
 
         AnomalyCacheData data = CACHE.computeIfAbsent(anomaly.getUUID(), k -> new AnomalyCacheData());
@@ -38,11 +38,9 @@ public class TransientZoneCache {
                 data.activeZones.remove(prevName);
                 data.tickEvents.add(new ZoneEvent(ZoneEventType.EXITED, prevName));
             } else {
-                // Страховка: если при выходе индекс зоны не определился — сбрасываем кэш активных зон
                 data.activeZones.clear();
             }
         } else if (event.getCurrentZone() == null) {
-            // Полный выход из аномалии
             data.activeZones.clear();
         }
 
@@ -56,14 +54,13 @@ public class TransientZoneCache {
         }
     }
 
-    public static Set<ZoneEvent> getSnapshotAndFlush(AnomalyEntity anomaly) {
+    public static Set<ZoneEvent> getSnapshotAndFlush(IAnomalyHolder anomaly) {
         AnomalyCacheData data = CACHE.get(anomaly.getUUID());
         if (data == null) {
             return Collections.emptySet();
         }
 
         Set<ZoneEvent> snapshot = new HashSet<>(data.tickEvents.size() + data.activeZones.size());
-
         snapshot.addAll(data.tickEvents);
 
         for (String zoneName : data.activeZones) {
@@ -71,27 +68,21 @@ public class TransientZoneCache {
         }
 
         data.tickEvents.clear();
-
         return snapshot;
     }
 
-    // Очищаем только одноразовые события (ENTERED/EXITED), сохраняя активные зоны
-    public static void flushTickEvents(AnomalyEntity anomaly) {
+    public static void flushTickEvents(IAnomalyHolder anomaly) {
         AnomalyCacheData data = CACHE.get(anomaly.getUUID());
         if (data != null) {
             data.tickEvents.clear();
         }
     }
 
-    // Полный сброс (вызывается только при деспавне/уничтожении аномалии)
-    public static void clear(AnomalyEntity anomaly) {
+    public static void clear(IAnomalyHolder anomaly) {
         CACHE.remove(anomaly.getUUID());
     }
 
-    /**
-     * Вычисляет строковый индекс зоны напрямую из определения аномалии AnomalyDefinition.
-     */
-    private static String getZoneIdentifier(AnomalyEntity anomaly, ZoneConfig zone) {
+    private static String getZoneIdentifier(IAnomalyHolder anomaly, ZoneConfig zone) {
         if (zone == null) return "";
 
         AnomalyDefinition definition = AnomalyReloadListener.get(anomaly.getAnomalyType(), anomaly.getCurrentState());

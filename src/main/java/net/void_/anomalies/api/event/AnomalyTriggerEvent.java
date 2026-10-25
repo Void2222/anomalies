@@ -3,22 +3,22 @@ package net.void_.anomalies.api.event;
 import net.minecraft.world.entity.Entity;
 import net.minecraftforge.eventbus.api.Cancelable;
 import net.minecraftforge.eventbus.api.Event;
-import net.void_.anomalies.core.AnomalyEntity;
+import net.void_.anomalies.core.IAnomalyHolder;
 
-@Cancelable // Позволяет другим модам отменять эффект аномалии (например, через защитный костюм)
+@Cancelable
 public class AnomalyTriggerEvent extends Event {
 
-    private final AnomalyEntity anomaly;
+    private final IAnomalyHolder anomaly;
     private final Entity target;
     private final String anomalyType;
 
-    public AnomalyTriggerEvent(AnomalyEntity anomaly, Entity target, String anomalyType) {
+    public AnomalyTriggerEvent(IAnomalyHolder anomaly, Entity target, String anomalyType) {
         this.anomaly = anomaly;
         this.target = target;
         this.anomalyType = anomalyType;
     }
 
-    public AnomalyEntity getAnomaly() {
+    public IAnomalyHolder getAnomaly() {
         return anomaly;
     }
 

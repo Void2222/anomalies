@@ -10,7 +10,7 @@ import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import net.void_.anomalies.anomaly.data.MinMaxRange;
 import net.void_.anomalies.client.ClientSetup;
-import net.void_.anomalies.core.AnomalyEntity;
+import net.void_.anomalies.core.IAnomalyHolder;
 import net.void_.anomalies.core.IAnomalyComponent;
 
 public class ParticleComponent implements IAnomalyComponent {
@@ -50,16 +50,16 @@ public class ParticleComponent implements IAnomalyComponent {
     }
 
     @Override
-    public void serverTick(AnomalyEntity anomaly) {}
+    public void serverTick(IAnomalyHolder anomaly) {}
 
     @Override
-    public void clientTick(AnomalyEntity anomaly) {
+    public void clientTick(IAnomalyHolder anomaly) {
         Minecraft mc = Minecraft.getInstance();
         Player localPlayer = mc.player;
         if (localPlayer == null) return;
 
         // 1️⃣ LOD: Предельная дистанция
-        double distanceSq = anomaly.distanceToSqr(localPlayer);
+        double distanceSq = localPlayer.distanceToSqr(anomaly.getPosition());
         if (distanceSq > RENDER_DISTANCE_SQ) {
             return;
         }
@@ -84,17 +84,17 @@ public class ParticleComponent implements IAnomalyComponent {
                 isOccluded = false;
             } else if (mc.gameRenderer.getMainCamera().isInitialized()) {
                 Vec3 cameraPos = mc.gameRenderer.getMainCamera().getPosition();
-                Vec3 anomalyCenter = anomaly.position().add(0.0D, height * 0.5D, 0.0D);
+                Vec3 anomalyCenter = anomaly.getPosition().add(0.0D, height * 0.5D, 0.0D);
 
                 ClipContext context = new ClipContext(
                         cameraPos,
                         anomalyCenter,
-                        ClipContext.Block.COLLIDER,
+                        ClipContext.Block.VISUAL,
                         ClipContext.Fluid.NONE,
                         localPlayer
                 );
 
-                HitResult hitResult = anomaly.level().clip(context);
+                HitResult hitResult = anomaly.getLevel().clip(context);
                 isOccluded = hitResult.getType() != HitResult.Type.MISS;
             }
         }
@@ -109,8 +109,8 @@ public class ParticleComponent implements IAnomalyComponent {
             clientTickCounter = 0;
             nextTriggerTick = Math.max(1, intervalRange.getInt());
 
-            var level = anomaly.level();
-            var pos = anomaly.position();
+            var level = anomaly.getLevel();
+            var pos = anomaly.getPosition();
             var random = level.random;
             int currentCount = countRange.getInt();
 

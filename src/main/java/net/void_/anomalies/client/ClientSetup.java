@@ -2,11 +2,9 @@ package net.void_.anomalies.client;
 
 import net.minecraft.client.renderer.culling.Frustum;
 import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.client.event.EntityRenderersEvent;
 import net.minecraftforge.client.event.RenderLevelStageEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
-import net.void_.anomalies.setup.EntityInit;
 
 public class ClientSetup {
 
@@ -14,15 +12,6 @@ public class ClientSetup {
 
     public static Frustum getLatestFrustum() {
         return latestFrustum;
-    }
-
-    // 1️⃣ Шина МОДА: регистрация рендереров при старте
-    @Mod.EventBusSubscriber(modid = "anomalies", value = Dist.CLIENT, bus = Mod.EventBusSubscriber.Bus.MOD)
-    public static class ModBusEvents {
-        @SubscribeEvent
-        public static void registerRenderers(EntityRenderersEvent.RegisterRenderers event) {
-            event.registerEntityRenderer(EntityInit.ANOMALY.get(), AnomalyRenderer::new);
-        }
     }
 
     // 2️⃣ Игровая шина FORGE: перехват актуального Frustum каждый кадр

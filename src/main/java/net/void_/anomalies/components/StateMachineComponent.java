@@ -2,10 +2,11 @@ package net.void_.anomalies.components;
 
 import net.void_.anomalies.api.behavior.AnomalyBehaviorRegistry;
 import net.void_.anomalies.api.behavior.IAnomalyStateBehavior;
-import net.void_.anomalies.core.AnomalyEntity;
 import net.void_.anomalies.core.IAnomalyComponent;
+import net.void_.anomalies.core.IAnomalyHolder;
 import net.void_.anomalies.dsl.cache.TransientZoneCache;
 import net.void_.anomalies.dsl.registry.AnomalyScriptRegistry;
+import net.void_.lightentity.api.ILightEntity;
 
 public class StateMachineComponent implements IAnomalyComponent {
 
@@ -20,7 +21,9 @@ public class StateMachineComponent implements IAnomalyComponent {
     }
 
     @Override
-    public void serverTick(AnomalyEntity anomaly) {
+    public void serverTick(ILightEntity entity) {
+        if (!(entity instanceof IAnomalyHolder anomaly)) return;
+
         if (!initialized) {
             behavior.onEnter(anomaly);
             initialized = true;
@@ -36,13 +39,9 @@ public class StateMachineComponent implements IAnomalyComponent {
             this.ticksInState = 0;
             this.initialized = false;
 
-            // Сбрасываем ТОЛЬКО одноразовые ивенты (ENTERED/EXITED), activeZones остаются!
             TransientZoneCache.flushTickEvents(anomaly);
 
             anomaly.setCurrentState(nextState);
         }
     }
-
-    @Override
-    public void clientTick(AnomalyEntity anomaly) {}
 }

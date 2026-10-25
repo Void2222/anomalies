@@ -7,13 +7,12 @@ import net.minecraft.world.entity.player.Player;
 import net.void_.anomalies.anomaly.data.AnomalyDefinition;
 import net.void_.anomalies.anomaly.data.ZoneConfig;
 import net.void_.anomalies.anomaly.loader.AnomalyReloadListener;
-import net.void_.anomalies.core.AnomalyEntity;
 
 import java.util.Set;
 
 public class AnalyzeProcessor {
 
-    public static void process(Player player, AnomalyEntity anomaly) {
+    public static void process(Player player, net.void_.anomalies.core.IAnomalyHolder anomaly) {
         String type = anomaly.getAnomalyType();
         String currentState = anomaly.getCurrentState();
         CompoundTag overrides = anomaly.getCustomOverrides();

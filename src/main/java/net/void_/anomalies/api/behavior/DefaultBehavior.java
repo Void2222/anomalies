@@ -1,6 +1,6 @@
 package net.void_.anomalies.api.behavior;
 
-import net.void_.anomalies.core.AnomalyEntity;
+import net.void_.anomalies.core.IAnomalyHolder;
 
 public class DefaultBehavior implements IAnomalyStateBehavior {
 
@@ -9,7 +9,7 @@ public class DefaultBehavior implements IAnomalyStateBehavior {
     private DefaultBehavior() {}
 
     @Override
-    public String onTick(AnomalyEntity anomaly, int ticksInState) {
-        return null; // Ничего не происходит, состояние вечно "idle"
+    public String onTick(IAnomalyHolder anomaly, int ticksInState) {
+        return null;
     }
 }

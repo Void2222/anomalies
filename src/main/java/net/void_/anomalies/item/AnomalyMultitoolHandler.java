@@ -1,21 +1,24 @@
 package net.void_.anomalies.item;
 
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.world.InteractionHand;
-import net.minecraft.world.InteractionResult;
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
-import net.minecraftforge.event.ServerChatEvent;
-import net.minecraftforge.event.entity.player.AttackEntityEvent;
 import net.minecraftforge.event.entity.player.PlayerInteractEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.network.PacketDistributor;
 import net.void_.anomalies.Anomalies;
-import net.void_.anomalies.core.AnomalyEntity;
+import net.void_.anomalies.core.IAnomalyHolder;
 import net.void_.anomalies.item.processor.AnalyzeProcessor;
 import net.void_.anomalies.item.processor.DeleteProcessor;
-import net.void_.anomalies.item.processor.ModifyProcessor;
 import net.void_.anomalies.item.processor.RelocateProcessor;
+import net.void_.anomalies.network.AnomalyNetwork;
+import net.void_.anomalies.network.OpenAnomalyEditPacket;
+import net.void_.lightentity.api.ILightEntity;
+import net.void_.lightentity.api.event.LightEntityEvent;
+import net.void_.lightentity.network.LightEntityTracker;
 
 @Mod.EventBusSubscriber(modid = Anomalies.MOD_ID)
 public class AnomalyMultitoolHandler {
@@ -24,47 +27,55 @@ public class AnomalyMultitoolHandler {
         return stack.getItem() instanceof AnomalyMultitoolItem;
     }
 
-    // 1. Взаимодействие с аномалией (ПКМ)
+    // 1. Взаимодействие с аномалией (ПКМ) через LightEntityEvent.Interact
     @SubscribeEvent
-    public static void onEntityInteract(PlayerInteractEvent.EntityInteract event) {
-        ItemStack stack = event.getItemStack();
+    public static void onLightEntityInteract(LightEntityEvent.Interact event) {
+        Player player = event.getPlayer();
+        ItemStack stack = player.getItemInHand(event.getHand());
 
-        if (isMultitool(stack) && event.getTarget() instanceof AnomalyEntity anomaly) {
-            // Отменяем стандартную обработку ПКМ, фиксируя результат взаимодействия
+        if (isMultitool(stack) && event.getEntity() instanceof IAnomalyHolder anomaly) {
             event.setCanceled(true);
-            event.setCancellationResult(InteractionResult.SUCCESS);
-
-            Player player = event.getEntity();
-            if (player.level().isClientSide) return; // Логику выполняем строго на сервере
+            if (player.level().isClientSide) return;
 
             MultitoolMode mode = AnomalyMultitoolItem.getMode(stack);
-
-            // Маршрутизация ПКМ по активному режиму
             switch (mode) {
                 case ANALYZE -> AnalyzeProcessor.process(player, anomaly);
-                case MODIFY -> ModifyProcessor.onInteract(player, stack, anomaly, player.isShiftKeyDown());
+                case MODIFY -> {
+                    if (player.isShiftKeyDown()) {
+                        anomaly.setCustomOverrides(new CompoundTag());
+                        anomaly.rebuildComponents();
+                        if (anomaly instanceof ILightEntity le) {
+                            LightEntityTracker.syncEntity(le);
+                        }
+                        player.sendSystemMessage(Component.literal("§b[Изменятор] §aВсе оверрайды аномалии сброшены!"));
+                    } else {
+                        AnomalyNetwork.CHANNEL.send(
+                                PacketDistributor.PLAYER.with(() -> (ServerPlayer) player),
+                                new OpenAnomalyEditPacket(anomaly.getUUID(), anomaly.getCustomOverrides())
+                        );
+                    }
+                }
                 case RELOCATE -> RelocateProcessor.onInteract(player, stack, anomaly, player.isShiftKeyDown());
                 case DELETE -> {
-                    // Удаление происходит по ЛКМ (AttackEntityEvent), ПКМ игнорируем
+                    // Удаление происходит по ЛКМ
                 }
             }
         }
     }
 
-    // 2. Удар по аномалии (ЛКМ) — для режима удаления
+    // 2. Атака по аномалии (ЛКМ) через LightEntityEvent.Attack
     @SubscribeEvent
-    public static void onEntityAttacked(AttackEntityEvent event) {
-        Player player = event.getEntity();
+    public static void onLightEntityAttack(LightEntityEvent.Attack event) {
+        Player player = event.getPlayer();
         ItemStack mainHand = player.getMainHandItem();
 
-        if (!isMultitool(mainHand)) return;
-        if (player.level().isClientSide) return;
+        if (isMultitool(mainHand) && event.getEntity() instanceof IAnomalyHolder anomaly) {
+            if (player.level().isClientSide) return;
 
-        if (event.getTarget() instanceof AnomalyEntity anomaly) {
             MultitoolMode mode = AnomalyMultitoolItem.getMode(mainHand);
             if (mode == MultitoolMode.DELETE) {
-                DeleteProcessor.process(player, anomaly, player.isShiftKeyDown());
                 event.setCanceled(true);
+                DeleteProcessor.process(player, anomaly, player.isShiftKeyDown());
             }
         }
     }
@@ -84,29 +95,6 @@ public class AnomalyMultitoolHandler {
                     RelocateProcessor.onLeftClickBlock(player, stack, event.getPos());
                 }
             }
-        }
-    }
-
-    // 4. Перехват чата — для ввода параметров в режимах MODIFY и RELOCATE
-    @SubscribeEvent
-    public static void onServerChat(ServerChatEvent event) {
-        Player player = event.getPlayer();
-        ItemStack mainHand = player.getMainHandItem();
-
-        if (!isMultitool(mainHand)) return;
-
-        MultitoolMode mode = AnomalyMultitoolItem.getMode(mainHand);
-        String message = event.getMessage().getString().trim();
-        boolean handled = false;
-
-        if (mode == MultitoolMode.MODIFY) {
-            handled = ModifyProcessor.onChat(player, mainHand, message);
-        } else if (mode == MultitoolMode.RELOCATE) {
-            handled = RelocateProcessor.onChat(player, mainHand, message);
-        }
-
-        if (handled) {
-            event.setCanceled(true);
         }
     }
 }

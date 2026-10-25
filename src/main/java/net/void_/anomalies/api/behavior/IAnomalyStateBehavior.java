@@ -1,13 +1,13 @@
 package net.void_.anomalies.api.behavior;
 
-import net.void_.anomalies.core.AnomalyEntity;
+import net.void_.anomalies.core.IAnomalyHolder;
 
 public interface IAnomalyStateBehavior {
 
     /**
      * Вызывается единоразово при входе в новое состояние.
      */
-    default void onEnter(AnomalyEntity anomaly) {}
+    default void onEnter(IAnomalyHolder anomaly) {}
 
     /**
      * Вызывается каждый серверный тик.
@@ -15,10 +15,10 @@ public interface IAnomalyStateBehavior {
      * @param ticksInState Количество тиков, проведенных в текущем состоянии
      * @return Имя следующего состояния (например, "warmup") или null, если фаза не меняется
      */
-    String onTick(AnomalyEntity anomaly, int ticksInState);
+    String onTick(IAnomalyHolder anomaly, int ticksInState);
 
     /**
      * Вызывается единоразово перед выходом из состояния.
      */
-    default void onExit(AnomalyEntity anomaly) {}
+    default void onExit(IAnomalyHolder anomaly) {}
 }

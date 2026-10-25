@@ -2,17 +2,17 @@ package net.void_.anomalies.anomaly.data;
 
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
-import net.void_.anomalies.core.AnomalyEntity;
+import net.void_.anomalies.core.IAnomalyHolder;
 
 public record ZoneConfig(
         double radius,
         DamageConfig damage,
         PhysicsConfig physics
 ) {
-    public boolean contains(AnomalyEntity anomaly, Entity target, AnomalyShape shape) {
+    public boolean contains(IAnomalyHolder anomaly, Entity target, AnomalyShape shape) {
         if (target == null || !target.isAlive()) return false;
 
-        Vec3 anomalyPos = anomaly.position();
+        Vec3 anomalyPos = anomaly.getPosition();
         Vec3 targetPos = target.position();
 
         Vec3 center = anomaly.getBoundingBox().getCenter();
@@ -34,7 +34,7 @@ public record ZoneConfig(
                 double horizDistSq = dx * dx + dz * dz;
 
                 if (horizDistSq <= radius * radius) {
-                    double anomalyHeight = anomaly.getBbHeight();
+                    double anomalyHeight = anomaly.getHeight();
                     double minY = anomalyPos.y;
                     double maxY = anomalyPos.y + anomalyHeight;
                     yield targetPos.y >= minY - 0.5 && targetPos.y <= maxY + 0.5;
@@ -44,7 +44,11 @@ public record ZoneConfig(
         };
     }
 
-    public boolean contains(AnomalyEntity anomaly, Entity target) {
-        return contains(anomaly, target, anomaly.getShape());
+    public boolean contains(IAnomalyHolder anomaly, Entity target) {
+        AnomalyShape shape = AnomalyShape.CYLINDER;
+        if (anomaly.getCustomOverrides() != null && anomaly.getCustomOverrides().contains("shape")) {
+            shape = AnomalyShape.fromString(anomaly.getCustomOverrides().getString("shape"));
+        }
+        return contains(anomaly, target, shape);
     }
 }

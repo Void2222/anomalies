@@ -3,17 +3,18 @@ package net.void_.anomalies.item.processor;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
-import net.minecraft.server.level.ServerLevel;
-import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
-import net.void_.anomalies.core.AnomalyEntity;
+import net.void_.anomalies.core.IAnomalyHolder;
+import net.void_.lightentity.api.ILightEntity;
+import net.void_.lightentity.network.LightEntityTracker;
+import net.void_.lightentity.storage.WorldLightManager;
 
 import java.util.UUID;
 
 public class RelocateProcessor {
 
-    public static void onInteract(Player player, ItemStack stack, AnomalyEntity anomaly, boolean isShiftDown) {
+    public static void onInteract(Player player, ItemStack stack, IAnomalyHolder anomaly, boolean isShiftDown) {
         CompoundTag tag = stack.getOrCreateTag();
         tag.putUUID("SelectedAnomaly", anomaly.getUUID());
         tag.remove("WaitingForParams");
@@ -35,10 +36,11 @@ public class RelocateProcessor {
         if (tag == null || tag.getBoolean("WaitingForOffset") || !tag.hasUUID("SelectedAnomaly")) return;
 
         UUID anomalyUuid = tag.getUUID("SelectedAnomaly");
-        Entity entity = ((ServerLevel) player.level()).getEntity(anomalyUuid);
+        ILightEntity entity = WorldLightManager.get(player.level()).getEntity(anomalyUuid);
 
-        if (entity instanceof AnomalyEntity anomaly) {
-            anomaly.setPos(pos.getX() + 0.5D, pos.getY() + 1.0D, pos.getZ() + 0.5D);
+        if (entity != null) {
+            entity.setPosition(pos.getX() + 0.5D, pos.getY() + 1.0D, pos.getZ() + 0.5D);
+            LightEntityTracker.syncEntity(entity);
             player.sendSystemMessage(Component.literal("§a[Переноситель] Аномалия успешно перемещена в точку: " +
                     pos.getX() + ", " + pos.getY() + ", " + pos.getZ()));
         } else {
@@ -59,11 +61,11 @@ public class RelocateProcessor {
                 double dz = Double.parseDouble(parts[2]);
 
                 UUID anomalyUuid = tag.getUUID("SelectedAnomaly");
-                Entity entity = ((ServerLevel) player.level()).getEntity(anomalyUuid);
+                ILightEntity entity = WorldLightManager.get(player.level()).getEntity(anomalyUuid);
 
-                if (entity instanceof AnomalyEntity anomaly) {
-                    var pos = anomaly.position();
-                    anomaly.setPos(pos.x + dx, pos.y + dy, pos.z + dz);
+                if (entity != null) {
+                    entity.setPosition(entity.getX() + dx, entity.getY() + dy, entity.getZ() + dz);
+                    LightEntityTracker.syncEntity(entity);
                     player.sendSystemMessage(Component.literal("§a[Переноситель] Аномалия сдвинута на: dX=" + dx + ", dY=" + dy + ", dZ=" + dz));
                 } else {
                     player.sendSystemMessage(Component.literal("§c[Переноситель] Аномалия не найдена в мире!"));

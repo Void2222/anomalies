@@ -2,6 +2,7 @@ package net.void_.anomalies.components;
 
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.common.MinecraftForge;
 import net.void_.anomalies.api.event.AnomalyPhysicsEvent;
@@ -9,8 +10,10 @@ import net.void_.anomalies.api.event.AnomalyZoneTransitionEvent;
 import net.void_.anomalies.anomaly.data.PhysicsConfig;
 import net.void_.anomalies.anomaly.data.ZoneConfig;
 import net.void_.anomalies.anomaly.util.ZoneUtils;
-import net.void_.anomalies.core.AnomalyEntity;
+import net.void_.anomalies.config.AnomalyIgnoreManager;
 import net.void_.anomalies.core.IAnomalyComponent;
+import net.void_.anomalies.core.IAnomalyHolder;
+import net.void_.lightentity.api.ILightEntity;
 
 import javax.annotation.Nullable;
 import java.util.*;
@@ -47,50 +50,57 @@ public class ImpulseComponent implements IAnomalyComponent {
     }
 
     @Override
-    public void serverTick(AnomalyEntity anomaly) {
-        // Проверяем покинувших зону сущностей каждый тик без задержки в 20 тиков
-        cleanupStaleEntities(anomaly);
+    public void serverTick(ILightEntity entity) {
+        if (entity instanceof IAnomalyHolder holder) {
+            cleanupStaleEntities(holder);
+        }
     }
 
-    @Override
-    public void clientTick(AnomalyEntity anomaly) {}
-
-    private void cleanupStaleEntities(AnomalyEntity anomaly) {
+    private void cleanupStaleEntities(IAnomalyHolder anomaly) {
         if (entityZones.isEmpty()) return;
-        if (!(anomaly.level() instanceof ServerLevel serverLevel)) return;
+        if (!(anomaly.getLevel() instanceof ServerLevel serverLevel)) return;
 
         Iterator<Map.Entry<UUID, ZoneConfig>> iterator = entityZones.entrySet().iterator();
         while (iterator.hasNext()) {
             Map.Entry<UUID, ZoneConfig> entry = iterator.next();
             UUID uuid = entry.getKey();
-            ZoneConfig previousZone = entry.getValue();
+            ZoneConfig recordedZone = entry.getValue();
 
             Entity target = serverLevel.getEntity(uuid);
-            ZoneConfig currentZone = (target != null) ? ZoneUtils.getActiveZone(zones, anomaly, target) : null;
 
-            if (target == null || !target.isAlive() || target.level() != anomaly.level() || currentZone == null) {
+            if (target == null || !target.isAlive() || target.level() != anomaly.getLevel()) {
+                iterator.remove();
+                continue;
+            }
+
+            ZoneConfig currentZone = ZoneUtils.getActiveZone(zones, anomaly, target);
+
+            if (currentZone == null) {
                 iterator.remove();
 
-                if (target != null && target.isAlive()) {
-                    AnomalyZoneTransitionEvent zoneEvent = new AnomalyZoneTransitionEvent(
-                            anomaly,
-                            target,
-                            anomaly.getAnomalyType(),
-                            previousZone,
-                            null
-                    );
-                    MinecraftForge.EVENT_BUS.post(zoneEvent);
-                }
+                AnomalyZoneTransitionEvent exitEvent = new AnomalyZoneTransitionEvent(
+                        anomaly,
+                        target,
+                        anomaly.getAnomalyType(),
+                        recordedZone,
+                        null
+                );
+                MinecraftForge.EVENT_BUS.post(exitEvent);
             }
         }
     }
 
-    public boolean applyImpulse(AnomalyEntity anomaly, Entity target) {
+    public boolean applyImpulse(IAnomalyHolder anomaly, Entity target) {
         return applyImpulse(anomaly, target, null);
     }
 
-    public boolean applyImpulse(AnomalyEntity anomaly, Entity target, @Nullable ZoneConfig precalculatedZone) {
+    public boolean applyImpulse(IAnomalyHolder anomaly, Entity target, @Nullable ZoneConfig precalculatedZone) {
         if (target == null || !target.isAlive()) return false;
+
+        // Игнорируем защищенных игроков!
+        if (target instanceof Player player && AnomalyIgnoreManager.isIgnored(player)) {
+            return false;
+        }
 
         UUID targetUuid = target.getUUID();
 
@@ -100,7 +110,6 @@ public class ImpulseComponent implements IAnomalyComponent {
 
         ZoneConfig previousZone = entityZones.get(targetUuid);
 
-        // Безопасное сравнение по радиусу вместо ссылки !=
         if (!isSameZone(currentZone, previousZone)) {
             AnomalyZoneTransitionEvent zoneEvent = new AnomalyZoneTransitionEvent(
                     anomaly,
@@ -136,22 +145,17 @@ public class ImpulseComponent implements IAnomalyComponent {
 
         if (pullToCenter) {
             double ax = anomaly.getX();
-            double ay = anomaly.getY() + anomaly.getBbHeight() * 0.5D;
+            double ay = anomaly.getY() + anomaly.getHeight() * 0.5D;
             double az = anomaly.getZ();
 
-            double tx = target.getX();
-            double ty = target.getY();
-            double tz = target.getZ();
-
-            double dx = ax - tx;
-            double dy = ay - ty;
-            double dz = az - tz;
+            double dx = ax - target.getX();
+            double dy = ay - target.getY();
+            double dz = az - target.getZ();
 
             double distSq = dx * dx + dy * dy + dz * dz;
 
-            if (distSq > 1.0E-6D) {
-                double invDist = 1.0D / Math.sqrt(distSq);
-
+            if (distSq > 0.0001) {
+                double invDist = 1.0 / Math.sqrt(distSq);
                 double dirX = dx * invDist;
                 double dirZ = dz * invDist;
 
@@ -159,49 +163,45 @@ public class ImpulseComponent implements IAnomalyComponent {
                 moveZ += dirZ * pForce;
 
                 if (zones.size() > 1 && isSameZone(currentZone, zones.get(0))) {
-                    double dist = distSq * invDist;
-                    double closenessFactor = Math.max(0.0D, 1.0D - (dist / currentZone.radius()));
-                    double aggressiveSpin = sForce * (1.5D + (closenessFactor * 3.0D));
+                    double dist = Math.sqrt(distSq);
+                    double radius = currentZone.radius();
+                    double closenessFactor = Math.max(0.0, 1.0 - (dist / radius));
+                    double aggressiveSpin = sForce * (1.5 + closenessFactor * 3.0);
 
-                    moveX += (-dirZ) * aggressiveSpin;
-                    moveZ += dirX * aggressiveSpin;
+                    double tangentX = -dirZ;
+                    double tangentZ = dirX;
+
+                    moveX += tangentX * aggressiveSpin;
+                    moveZ += tangentZ * aggressiveSpin;
                 }
 
-                moveY += impY;
-
-                double horizSqr = moveX * moveX + moveZ * moveZ;
-                if (horizSqr > 1.0D) {
-                    double invHoriz = 1.0D / Math.sqrt(horizSqr);
-                    moveX *= invHoriz;
-                    moveZ *= invHoriz;
+                double horizontalSpeedSq = moveX * moveX + moveZ * moveZ;
+                if (horizontalSpeedSq > 1.0) {
+                    double hScale = 1.0 / Math.sqrt(horizontalSpeedSq);
+                    moveX *= hScale;
+                    moveZ *= hScale;
                 }
+
+                moveY = (dy * invDist) * pForce;
             }
         } else {
-            double iX = pConfig != null ? pConfig.impulseX() : xMultiplier;
-            double iY = pConfig != null ? pConfig.impulseY() : yMultiplier;
-            double iZ = pConfig != null ? pConfig.impulseZ() : zMultiplier;
-
-            moveX += iX;
-            moveY += iY;
-            moveZ += iZ;
+            moveX += xMultiplier;
+            moveZ += zMultiplier;
         }
 
-        Vec3 calculatedMovement = new Vec3(moveX, moveY, moveZ);
+        moveY += impY;
 
-        AnomalyPhysicsEvent physicsEvent = new AnomalyPhysicsEvent(
-                anomaly,
-                target,
-                anomaly.getAnomalyType(),
-                currentZone,
-                calculatedMovement
-        );
+        Vec3 newMovement = new Vec3(moveX, moveY, moveZ);
 
+        AnomalyPhysicsEvent physicsEvent = new AnomalyPhysicsEvent(anomaly, target, newMovement);
         if (MinecraftForge.EVENT_BUS.post(physicsEvent)) {
             return false;
         }
 
-        target.setDeltaMovement(physicsEvent.getDeltaMovement());
+        Vec3 finalMovement = physicsEvent.getDeltaMovement();
+        target.setDeltaMovement(finalMovement);
         target.hurtMarked = true;
+
         return true;
     }
 
