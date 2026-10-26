@@ -86,8 +86,11 @@ public class TransientZoneCache {
         if (zone == null) return "";
 
         AnomalyDefinition definition = AnomalyReloadListener.get(anomaly.getAnomalyType(), anomaly.getCurrentState());
-        if (definition != null && definition.zones() != null) {
-            List<ZoneConfig> sortedZones = definition.zones().stream()
+        List<ZoneConfig> baseZones = definition != null ? definition.zones() : null;
+        List<ZoneConfig> activeZones = net.void_.anomalies.anomaly.util.OverrideHelper.getZones(anomaly.getCustomOverrides(), baseZones);
+
+        if (activeZones != null && !activeZones.isEmpty()) {
+            List<ZoneConfig> sortedZones = activeZones.stream()
                     .sorted(Comparator.comparingDouble(ZoneConfig::radius))
                     .toList();
 

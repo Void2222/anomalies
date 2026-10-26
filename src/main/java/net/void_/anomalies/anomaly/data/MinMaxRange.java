@@ -51,8 +51,11 @@ public class MinMaxRange {
         return max <= 0.0;
     }
 
+    public double getMin() {
+        return min;
+    }
+
     public double getMax() {
         return max;
     }
-
 }

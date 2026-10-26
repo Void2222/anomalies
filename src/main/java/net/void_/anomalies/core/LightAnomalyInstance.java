@@ -105,6 +105,9 @@ public class LightAnomalyInstance implements ILightEntity, IAnomalyHolder {
         if (!this.currentState.equals(newState)) {
             this.currentState = newState;
             rebuildComponents();
+            if (this.level != null && !this.level.isClientSide()) {
+                net.void_.lightentity.network.LightEntityTracker.syncEntity(this);
+            }
         }
     }
 

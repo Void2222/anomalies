@@ -127,6 +127,17 @@ public class EditorGraphModel {
         }
         root.add("nodes", nodesObj);
 
+        JsonObject portalsObj = new JsonObject();
+        for (EditorPortalNode portal : portals) {
+            JsonObject p = new JsonObject();
+            p.addProperty("id", portal.getId());
+            p.addProperty("target", portal.getTargetState());
+            p.addProperty("x", portal.getX());
+            p.addProperty("y", portal.getY());
+            portalsObj.add(portal.getId(), p);
+        }
+        root.add("portals", portalsObj);
+
         return GSON.toJson(root);
     }
 
@@ -150,6 +161,34 @@ public class EditorGraphModel {
                     JsonObject pos = entry.getValue().getAsJsonObject();
                     if (pos.has("x")) node.setX(pos.get("x").getAsFloat());
                     if (pos.has("y")) node.setY(pos.get("y").getAsFloat());
+                }
+            }
+        }
+
+        if (root.has("portals")) {
+            JsonObject portalsObj = root.getAsJsonObject("portals");
+            for (Map.Entry<String, com.google.gson.JsonElement> entry : portalsObj.entrySet()) {
+                if (entry.getValue().isJsonObject()) {
+                    JsonObject p = entry.getValue().getAsJsonObject();
+                    String portalId = entry.getKey();
+                    float px = p.has("x") ? p.get("x").getAsFloat() : 0.0f;
+                    float py = p.has("y") ? p.get("y").getAsFloat() : 0.0f;
+                    String target = p.has("target") ? p.get("target").getAsString() : "";
+
+                    EditorPortalNode existing = null;
+                    for (EditorPortalNode portal : portals) {
+                        if (portal.getId().equals(portalId)) {
+                            existing = portal;
+                            break;
+                        }
+                    }
+                    if (existing != null) {
+                        existing.setX(px);
+                        existing.setY(py);
+                        if (!target.isEmpty()) existing.setTargetState(target);
+                    } else if (!target.isEmpty()) {
+                        portals.add(new EditorPortalNode(portalId, target, px, py));
+                    }
                 }
             }
         }

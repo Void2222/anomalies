@@ -60,6 +60,22 @@ public final class GraphModelConverter {
             graph.addNode(node);
         }
 
+        // Авто-создание порталов для обратных связей в стартовое состояние (idle / START)
+        String initialState = scriptModel.getInitialState();
+        for (EditorStateNode sourceNode : graph.getNodes()) {
+            if (sourceNode.getStateName().equals(initialState)) continue;
+            var transitions = sourceNode.getOutgoingTransitions();
+            for (int i = 0; i < transitions.size(); i++) {
+                EditorTransition t = transitions.get(i);
+                if (t.getTargetState().equals(initialState)) {
+                    String portalId = sourceNode.getStateName() + "_" + i;
+                    float px = sourceNode.getX() + sourceNode.getWidth() + 45.0f;
+                    float py = sourceNode.getOutputPortY(i) - 10.0f;
+                    graph.addPortal(new net.void_.anomalies.client.gui.editor.model.EditorPortalNode(portalId, initialState, px, py));
+                }
+            }
+        }
+
         // Применение метаданных координат или авто-раскладка
         if (editorJsonMeta != null && !editorJsonMeta.isBlank()) {
             try {

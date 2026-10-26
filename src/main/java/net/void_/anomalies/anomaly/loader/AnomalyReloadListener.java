@@ -66,23 +66,36 @@ public class AnomalyReloadListener extends SimpleJsonResourceReloadListener {
                     String type;
                     String rawFileName;
 
-                    if (parts.length >= 3 && parts[1].equals("states")) {
-                        type = parts[0];
-                        rawFileName = parts[2];
-                    } else if (parts.length == 2) {
-                        type = parts[0];
-                        rawFileName = parts[1];
+                    // Динамический поиск сегмента "states" вне зависимости от стартовой глубины пути
+                    int statesIndex = -1;
+                    for (int i = 0; i < parts.length; i++) {
+                        if (parts[i].equals("states")) {
+                            statesIndex = i;
+                            break;
+                        }
+                    }
+
+                    if (statesIndex > 0) {
+                        // Структура: .../<type>/states/<state>.json
+                        type = parts[statesIndex - 1];
+                        rawFileName = parts[parts.length - 1];
                     } else {
-                        String fileName = parts[0];
-                        type = fileName.endsWith(".json") ? fileName.substring(0, fileName.length() - 5) : fileName;
-                        rawFileName = "idle.json";
+                        int offset = (parts.length > 0 && parts[0].equals("anomalies")) ? 1 : 0;
+                        if (parts.length - offset >= 2) {
+                            type = parts[offset];
+                            rawFileName = parts[parts.length - 1];
+                        } else {
+                            String fileName = parts[parts.length - 1];
+                            type = fileName.endsWith(".json") ? fileName.substring(0, fileName.length() - 5) : fileName;
+                            rawFileName = "idle.json";
+                        }
                     }
 
                     String state = rawFileName.endsWith(".json")
                             ? rawFileName.substring(0, rawFileName.length() - 5)
                             : rawFileName;
 
-                    REGISTRY.computeIfAbsent(type, k -> new HashMap<>()).put(state, definition);
+                    REGISTRY.computeIfAbsent(type.toLowerCase(), k -> new HashMap<>()).put(state.toLowerCase(), definition);
                 }
             } catch (Exception e) {
                 LOGGER.error("Failed to parse anomaly resource for {}", location, e);
